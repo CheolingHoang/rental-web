@@ -1,0 +1,364 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { db } from "../../../lib/firebase";
+import { Plus, Search, Wrench, Loader2, X, Trash2, Camera, Check, Edit2 } from "lucide-react";
+
+export interface Equipment {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  serialNumber: string;
+  pricePerDay: number;
+}
+
+export default function EquipmentPage() {
+  const [equipments, setEquipments] = useState<Equipment[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  // States cho tính năng Tìm kiếm & Lọc
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
+
+  // States cho tính năng danh mục
+  const [defaultCategories, setDefaultCategories] = useState(["Máy ảnh", "Ống kính", "Ánh sáng", "Phụ kiện"]);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
+
+  // States cho Modal Thêm/Sửa thiết bị
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null); // Lưu ID nếu đang sửa
+  const [formData, setFormData] = useState({
+    name: "",
+    category: "Máy ảnh",
+    serialNumber: "",
+    pricePerDay: "",
+    status: "Rảnh",
+  });
+
+  // 1. Lấy dữ liệu Real-time từ Firebase
+  useEffect(() => {
+    const q = query(collection(db, "equipments"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const equipData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Equipment[];
+      
+      setEquipments(equipData);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Tổng hợp tất cả danh mục (Mặc định + Đã có trong Database)
+  const allCategories = Array.from(new Set([...defaultCategories, ...equipments.map(eq => eq.category)]));
+
+  // Hàm xử lý Thêm Danh mục mới ngay trong Form
+  const handleAddNewCategory = () => {
+    if (newCategory.trim() !== "") {
+      const addedCategory = newCategory.trim();
+      if (!defaultCategories.includes(addedCategory)) {
+        setDefaultCategories([...defaultCategories, addedCategory]);
+      }
+      setFormData({ ...formData, category: addedCategory });
+    }
+    setIsAddingCategory(false);
+    setNewCategory("");
+  };
+
+  // 2. Xử lý Thêm mới HOẶC Cập nhật thiết bị
+  const handleSaveEquipment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      if (editingId) {
+        // Cập nhật dữ liệu cũ
+        await updateDoc(doc(db, "equipments", editingId), {
+          name: formData.name,
+          category: formData.category,
+          serialNumber: formData.serialNumber,
+          pricePerDay: Number(formData.pricePerDay),
+          status: formData.status,
+        });
+      } else {
+        // Thêm dữ liệu mới
+        await addDoc(collection(db, "equipments"), {
+          name: formData.name,
+          category: formData.category,
+          serialNumber: formData.serialNumber,
+          pricePerDay: Number(formData.pricePerDay),
+          status: formData.status,
+          createdAt: serverTimestamp()
+        });
+      }
+      setIsModalOpen(false);
+      setEditingId(null);
+    } catch (error) {
+      console.error("Lỗi khi lưu thiết bị:", error);
+      alert("Có lỗi xảy ra khi lưu dữ liệu!");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Hàm Mở form để Sửa
+  const handleEditClick = (item: Equipment) => {
+    setEditingId(item.id);
+    setFormData({
+      name: item.name,
+      category: item.category,
+      serialNumber: item.serialNumber,
+      pricePerDay: item.pricePerDay.toString(),
+      status: item.status,
+    });
+    setIsModalOpen(true);
+  };
+
+  // 3. Xử lý Xóa thiết bị
+  const handleDelete = async (id: string) => {
+    if (window.confirm("Bạn có chắc chắn muốn xóa thiết bị này khỏi hệ thống?")) {
+      await deleteDoc(doc(db, "equipments", id));
+    }
+  };
+
+  // 4. Lọc dữ liệu dựa trên ô tìm kiếm
+  const filteredEquipments = equipments.filter(item => {
+    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          item.serialNumber.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = filterCategory === "all" || item.category === filterCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Rảnh': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+      case 'Đang thuê': return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
+      case 'Bảo trì': return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
+      default: return 'text-zinc-300 bg-white/10 border-white/10';
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-8 relative">
+      
+      {/* Header */}
+      <div className="flex justify-between items-end">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Wrench className="w-4 h-4 text-indigo-400" />
+            <span className="text-xs font-medium tracking-widest text-indigo-400 uppercase">Quản lý kho</span>
+          </div>
+          <h2 className="text-3xl font-normal text-white tracking-tight">Thiết bị & Tài sản</h2>
+        </div>
+        <button 
+          onClick={() => {
+            setEditingId(null);
+            setFormData({ name: "", category: allCategories[0] || "Máy ảnh", serialNumber: "", pricePerDay: "", status: "Rảnh" });
+            setIsModalOpen(true);
+          }}
+          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+        >
+          <Plus className="w-4 h-4" />
+          Thêm thiết bị mới
+        </button>
+      </div>
+
+      {/* Bộ lọc & Tìm kiếm */}
+      <div className="flex gap-4">
+        <div className="relative w-full max-w-md">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+          <input 
+            type="text" 
+            placeholder="Tìm theo tên, serial..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-11 pr-4 py-2.5 bg-white/[0.02] border border-white/5 rounded-xl text-sm text-white placeholder-zinc-600 focus:bg-white/5 focus:border-indigo-500/30 focus:ring-1 focus:ring-indigo-500/50 outline-none transition-all"
+          />
+        </div>
+        <div className="relative min-w-[200px]">
+          <select 
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/5 rounded-xl text-sm text-zinc-300 focus:outline-none focus:border-indigo-500/30 cursor-pointer appearance-none"
+          >
+            <option value="all">Tất cả danh mục</option>
+            {allCategories.map((cat, idx) => (
+              <option key={idx} value={cat}>{cat}</option>
+            ))}
+          </select>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>
+        </div>
+      </div>
+
+      {/* Danh sách thiết bị */}
+      <div className="bg-white/[0.02] rounded-2xl border border-white/5 backdrop-blur-md overflow-hidden min-h-[400px] shadow-xl">
+        {loading ? (
+          <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+            <p className="text-sm uppercase tracking-widest animate-pulse">Đang tải dữ liệu từ máy chủ...</p>
+          </div>
+        ) : filteredEquipments.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
+            <Camera className="w-12 h-12 mb-4 opacity-20" />
+            <p>Kho thiết bị hiện đang trống hoặc không tìm thấy kết quả.</p>
+          </div>
+        ) : (
+          <table className="w-full text-left text-sm text-zinc-400">
+            <thead className="bg-black/40 text-zinc-500 border-b border-white/5 uppercase tracking-wider text-[11px] font-semibold">
+              <tr>
+                <th className="px-6 py-4">Thiết bị</th>
+                <th className="px-6 py-4">Serial / Mã vạch</th>
+                <th className="px-6 py-4">Danh mục</th>
+                <th className="px-6 py-4">Đơn giá (Ngày)</th>
+                <th className="px-6 py-4">Trạng thái</th>
+                <th className="px-6 py-4 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {filteredEquipments.map((item) => (
+                <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
+                  <td className="px-6 py-4 font-medium text-white">{item.name}</td>
+                  <td className="px-6 py-4 font-mono text-xs text-zinc-300">{item.serialNumber}</td>
+                  <td className="px-6 py-4">{item.category}</td>
+                  <td className="px-6 py-4 font-medium text-indigo-300">
+                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.pricePerDay)}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
+                      {item.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right flex justify-end gap-2">
+                    <button 
+                      onClick={() => handleEditClick(item)}
+                      className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10"
+                      title="Sửa thiết bị"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(item.id)}
+                      className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10"
+                      title="Xóa thiết bị"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Modal Thêm/Sửa thiết bị mới (Popup) */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+              <h3 className="text-xl font-medium text-white">
+                {editingId ? "Cập nhật tài sản" : "Thêm tài sản mới"}
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveEquipment} className="p-6 space-y-5">
+              <div>
+                <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Tên thiết bị</label>
+                <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all" placeholder="VD: Bàn trộn hình ATEM Mini Pro" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                {/* Khu vực chọn Danh mục mới / cũ */}
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Danh mục</label>
+                  {isAddingCategory ? (
+                    <div className="flex gap-2 animate-in fade-in slide-in-from-right-4 duration-300">
+                      <input 
+                        autoFocus
+                        type="text" 
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        placeholder="Nhập loại mới..." 
+                        className="w-full px-3 py-2.5 bg-black/40 border border-indigo-500/50 rounded-xl text-white focus:outline-none text-sm"
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewCategory(); } }}
+                      />
+                      <button type="button" onClick={handleAddNewCategory} className="px-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white transition-colors flex items-center justify-center shrink-0">
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button type="button" onClick={() => setIsAddingCategory(false)} className="px-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-zinc-400 hover:text-white transition-colors flex items-center justify-center shrink-0">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <div className="relative w-full">
+                        <select 
+                          value={formData.category} 
+                          onChange={e => setFormData({...formData, category: e.target.value})} 
+                          className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none appearance-none transition-all"
+                        >
+                          {allCategories.map((cat, idx) => (
+                            <option key={idx} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => setIsAddingCategory(true)}
+                        className="px-3 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-indigo-400 hover:text-indigo-300 transition-colors flex items-center justify-center shrink-0"
+                        title="Tạo danh mục mới"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Số Serial / Mã vạch</label>
+                  <input required type="text" value={formData.serialNumber} onChange={e => setFormData({...formData, serialNumber: e.target.value})} className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none font-mono text-sm transition-all" placeholder="SN-123456" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Giá thuê / Ngày (VNĐ)</label>
+                  <input required type="number" value={formData.pricePerDay} onChange={e => setFormData({...formData, pricePerDay: e.target.value})} className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all" placeholder="VD: 500000" />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Trạng thái đầu vào</label>
+                  <div className="relative">
+                    <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none appearance-none transition-all">
+                      <option>Rảnh</option>
+                      <option>Đang thuê</option>
+                      <option>Bảo trì</option>
+                    </select>
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-6 mt-2 border-t border-white/5 flex gap-3 justify-end">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">Hủy bỏ</button>
+                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)] disabled:opacity-50">
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />)}
+                  {editingId ? "Cập nhật thay đổi" : "Lưu thiết bị"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
