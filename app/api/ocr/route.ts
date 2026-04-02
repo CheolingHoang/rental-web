@@ -1,20 +1,35 @@
-import { NextResponse } from 'next/server';
-// Yêu cầu cài đặt: npm install @google-cloud/vision
-import vision from '@google-cloud/vision'; 
+import { NextRequest, NextResponse } from 'next/server';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const client = new vision.ImageAnnotatorClient();
+// Sử dụng API Key đã cài trên Vercel
+const genAI = new GoogleGenerativeAI(process.env.NEXT_PUBLIC_GEMINI_API_KEY || "");
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { imageUrl } = await request.json();
+    const { imageBase64 } = await req.json();
     
-    // Gọi Google Vision API để trích xuất văn bản từ ảnh thiết bị/biên lai
-    const [result] = await client.textDetection(imageUrl);
-    const detections = result.textAnnotations;
-    const extractedText = detections?.[0]?.description || "";
+    // Sử dụng model mới nhất (như Tín đã fix lỗi 404 trước đó)
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    return NextResponse.json({ success: true, text: extractedText });
-  } catch (error) {
-    return NextResponse.json({ success: false, error: "Lỗi nhận diện OCR" }, { status: 500 });
+    const prompt = "Trích xuất thông tin từ ảnh này (thiết bị hoặc CCCD) và trả về định dạng JSON nguyên bản, không kèm giải thích hay markdown.";
+
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: imageBase64.split(',')[1], // Lấy phần base64 sạch
+          mimeType: "image/jpeg"
+        }
+      }
+    ]);
+
+    const responseText = result.response.text();
+    const cleanJson = responseText.replace(/```json|```/g, "").trim();
+
+    return NextResponse.json(JSON.parse(cleanJson));
+
+  } catch (error: any) {
+    console.error("AI Route Error:", error);
+    return NextResponse.json({ error: "Lỗi xử lý AI: " + error.message }, { status: 500 });
   }
 }
