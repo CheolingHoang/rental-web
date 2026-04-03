@@ -1,23 +1,32 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import "./globals.css"; // File CSS chứa cấu hình Tailwind
+import "./globals.css";
 
-const inter = Inter({ subsets: ["latin", "vietnamese"] });
+// Cấu hình Font chữ Inter (hiện đại, sạch sẽ)
+const inter = Inter({ subsets: ["latin"] });
 
+// Thông tin Metadata hiện trên tab trình duyệt và Google
 export const metadata: Metadata = {
-  title: "Velorah Rental System",
-  description: "Hệ thống quản lý và cho thuê thiết bị",
+  title: "Space Vietnam | Management System",
+  description: "Hệ thống quản lý thiết bị và khách hàng tối ưu cho sự kiện.",
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="vi">
-      <body className={inter.className}>
-        {children}
+      <body
+        className={`${inter.className} bg-[#050505] text-zinc-300 antialiased selection:bg-indigo-500/30`}
+      >
+        {/* Nếu Tín có AuthProvider để quản lý Firebase, 
+          hãy bọc {children} bên trong nó ở đây.
+        */}
+        <div className="min-h-screen relative overflow-x-hidden">
+          {children}
+        </div>
       </body>
     </html>
   );
