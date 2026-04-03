@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { 
   LayoutDashboard, Wrench, FileText, Settings, 
-  LogOut, Search, Sparkles, Users, Menu, X 
+  LogOut, Search, Sparkles, Users, Menu, X, Image as ImageIcon
 } from "lucide-react";
 import { logout } from "../../services/auth";
 
@@ -30,6 +30,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: "Khách hàng", icon: Users, path: "/dashboard/customers" },
     { name: "Lệnh thuê", icon: FileText, path: "/dashboard/rentals" },
     { name: "Cấu hình AI", icon: Sparkles, path: "/dashboard/ai-settings" },
+    { name: "Duyệt ảnh mẫu", icon: ImageIcon, path: "/dashboard/project" },
     { name: "Hệ thống", icon: Settings, path: "/dashboard/settings" },
   ];
 
