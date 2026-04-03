@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { getAuth, onAuthStateChanged } from "firebase/auth"; // Thêm Auth để lấy email user
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { Plus, Search, Wrench, Loader2, X, Trash2, Camera, Check, Edit2 } from "lucide-react";
+import { Plus, Search, Wrench, Loader2, X, Trash2, Camera, Check, Edit2, Lock } from "lucide-react"; // Đã thêm icon Lock
 
 export interface Equipment {
   id: string;
@@ -19,13 +20,15 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function EquipmentPage() {
+  // --- STATE PHÂN QUYỀN (RBAC) ---
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null); // null = đang kiểm tra
+
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [loading, setLoading] = useState(true);
   
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
 
-  // Danh mục
   const [defaultCategories, setDefaultCategories] = useState(["Máy ảnh", "Ống kính", "Ánh sáng", "Phụ kiện"]);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
@@ -44,8 +47,40 @@ export default function EquipmentPage() {
 
   const [displayPrice, setDisplayPrice] = useState("");
 
-  // 1. Fetch Dữ liệu
+  // 0. KIỂM TRA PHÂN QUYỀN TRƯỚC KHI TẢI DỮ LIỆU
   useEffect(() => {
+    const auth = getAuth();
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user && user.email) {
+        // Quét trong bảng app_users xem email này có quyền không
+        const q = query(collection(db, "app_users"), where("email", "==", user.email));
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+          const userData = snapshot.docs[0].data();
+          // Kiểm tra xem Role là Admin hoặc trong danh sách allowedPages có chứa link trang này không
+          if (userData.role === "Admin" || (userData.allowedPages && userData.allowedPages.includes("/dashboard/equipment"))) {
+            setHasPermission(true);
+          } else {
+            setHasPermission(false);
+          }
+        } else {
+          // Fallback: Nếu không tìm thấy trong danh sách (có thể là tk của bạn lúc mới dev), cứ cho qua
+          setHasPermission(true);
+        }
+      } else {
+        setHasPermission(false); // Chưa đăng nhập
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // 1. Fetch Dữ liệu Thiết bị
+  useEffect(() => {
+    // Chỉ tải dữ liệu nếu đã có quyền (tiết kiệm số lượt đọc Firebase)
+    if (hasPermission !== true) return; 
+
     const q = query(collection(db, "equipments"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const equipData = snapshot.docs.map(doc => ({
@@ -58,7 +93,7 @@ export default function EquipmentPage() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [hasPermission]);
 
   const allCategories = Array.from(new Set([...defaultCategories, ...equipments.map(eq => eq.category)]));
 
@@ -77,8 +112,6 @@ export default function EquipmentPage() {
 
   const handleDeleteCategory = () => {
     const currentCategory = formData.category;
-    
-    // Kiểm tra xem danh mục có đang được sử dụng bởi thiết bị nào không
     const isUsed = equipments.some(eq => eq.category === currentCategory);
     if (isUsed) {
       alert(`Không thể xóa danh mục "${currentCategory}" vì đang có thiết bị trong kho thuộc danh mục này!`);
@@ -86,11 +119,8 @@ export default function EquipmentPage() {
     }
 
     if (window.confirm(`Bạn có chắc chắn muốn xóa danh mục "${currentCategory}"?`)) {
-      // Xóa khỏi danh sách mặc định
       const newCategories = defaultCategories.filter(cat => cat !== currentCategory);
       setDefaultCategories(newCategories);
-      
-      // Tự động chọn danh mục đầu tiên còn lại (hoặc "Khác" nếu rỗng)
       const remainingCategories = Array.from(new Set([...newCategories, ...equipments.map(eq => eq.category)]));
       setFormData({ ...formData, category: remainingCategories[0] || "Khác" });
     }
@@ -168,8 +198,37 @@ export default function EquipmentPage() {
     }
   };
 
+  // --- GIAO DIỆN KIỂM TRA PHÂN QUYỀN ---
+  
+  // 1. Màn hình Loading khi đang check DB
+  if (hasPermission === null) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] text-zinc-500">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+        <p className="text-sm uppercase tracking-widest animate-pulse">Đang kiểm tra dữ liệu định danh...</p>
+      </div>
+    );
+  }
+
+  // 2. Màn hình cấm truy cập
+  if (hasPermission === false) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4 animate-in fade-in zoom-in-95">
+        <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+          <Lock className="w-10 h-10 text-red-400" />
+        </div>
+        <h2 className="text-3xl font-bold text-white mb-3">Truy cập bị từ chối</h2>
+        <p className="text-zinc-400 max-w-md mb-8">
+          Tài khoản của bạn không có đặc quyền để xem và chỉnh sửa "Kho thiết bị". 
+          Vui lòng liên hệ Quản trị viên (Admin) để được cấp thêm phân quyền.
+        </p>
+      </div>
+    );
+  }
+
+  // 3. Nếu qua ải kiểm tra -> Hiển thị trang bình thường
   return (
-    <div className="max-w-7xl mx-auto space-y-8 relative">
+    <div className="max-w-7xl mx-auto space-y-8 relative animate-in fade-in duration-500">
       
       {/* Header */}
       <div className="flex justify-between items-end">

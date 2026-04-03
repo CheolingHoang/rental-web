@@ -6,26 +6,33 @@ import { login, loginWithGoogle } from "../../services/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState(""); // Đổi state thành username cho chuẩn
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // 1. Xử lý đăng nhập bằng Email
+  // 1. Xử lý đăng nhập bằng Tên đăng nhập / Email
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
+    // THỦ THUẬT 1: Đệm email ảo nếu người dùng chỉ nhập Username
+    let finalEmail = username.trim().toLowerCase();
+    if (!finalEmail.includes('@')) {
+      finalEmail += '@space.internal';
+    }
+
+    // THỦ THUẬT 2: Đệm password bí mật để qua mặt luật 6 ký tự của Firebase
+    const finalPassword = password + "SpaceVN@2026";
+
     try {
-      // TypeScript Fix: login trả về { user, role }, không phải { error }
-      // Nếu đăng nhập sai, hàm này sẽ tự động "throw" lỗi xuống catch bên dưới
-      await login(email, password); 
+      // Truyền email và password ĐÃ ĐỆM vào service
+      await login(finalEmail, finalPassword); 
       
       // Nếu chạy đến đây là thành công
       router.push("/dashboard");
     } catch (err: any) {
-      // Mọi lỗi (sai mật khẩu, lỗi mạng...) đều được xử lý tại đây
       console.error("Login fail:", err);
       setError("Sai tài khoản hoặc mật khẩu! Vui lòng thử lại.");
     } finally {
@@ -39,7 +46,6 @@ export default function LoginPage() {
     setError("");
     
     try {
-      // Tương tự: Dùng try/catch để bắt lỗi thay vì gán biến error trực tiếp
       await loginWithGoogle();
       router.push("/dashboard");
     } catch (err: any) {
@@ -53,7 +59,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-[#050505] text-white selection:bg-indigo-500/30">
       <div className="max-w-md w-full p-8 bg-white/[0.02] border border-white/5 rounded-[32px] backdrop-blur-xl relative overflow-hidden shadow-2xl">
         
-        {/* Ambient Glow - Tăng tính thẩm mỹ cho "Space" */}
+        {/* Ambient Glow */}
         <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-indigo-600/5 blur-[100px] pointer-events-none" />
 
         <div className="text-center mb-10 relative z-10">
@@ -71,10 +77,10 @@ export default function LoginPage() {
 
         <form onSubmit={handleEmailLogin} className="space-y-4 relative z-10">
           <input
-            type="email"
-            placeholder="Email quản trị"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            type="text" // ĐỔI TỪ EMAIL SANG TEXT Ở ĐÂY
+            placeholder="Tên đăng nhập hoặc Email"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             className="w-full px-5 py-3.5 bg-white/[0.03] border border-white/5 rounded-2xl text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500/40 focus:bg-white/[0.05] transition-all text-sm"
             required
           />

@@ -1,32 +1,68 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
-import { db } from "../../../lib/firebase"; // Đảm bảo đường dẫn này đúng
+import { useRouter } from "next/navigation"; 
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, where, getDocs } from "firebase/firestore";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { db } from "../../../lib/firebase"; 
 import { 
   Users, Search, ScanFace, Plus, X, MapPin, Link as LinkIcon, 
-  CreditCard, Phone, Calendar, UserCheck, Loader2, Trash2, 
-  History, Clock, AlertCircle, ChevronRight, Save
+  CreditCard, Phone, Calendar, Loader2, Trash2, 
+  History, Clock, AlertCircle, ChevronRight, Save, Lock
 } from "lucide-react";
 
 export default function CustomersPage() {
+  const router = useRouter(); 
+  
+  // --- STATE PHÂN QUYỀN (RBAC) ---
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
   const [customers, setCustomers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true); // Thêm state loading
+  const [allRentals, setAllRentals] = useState<any[]>([]);
+  
+  const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // State cho Modal Thêm thủ công
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Trạng thái đang lưu Firebase
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: "", cccd: "", phone: "", address: "", dob: "", socialLinks: [""]
   });
 
-  // 1. Lắng nghe dữ liệu Khách hàng từ Firebase (Real-time)
+  // 0. KIỂM TRA PHÂN QUYỀN TRƯỚC KHI TẢI DỮ LIỆU
   useEffect(() => {
+    const auth = getAuth();
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user && user.email) {
+        const q = query(collection(db, "app_users"), where("email", "==", user.email));
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+          const userData = snapshot.docs[0].data();
+          if (userData.role === "Admin" || (userData.allowedPages && userData.allowedPages.includes("/dashboard/customers"))) {
+            setHasPermission(true);
+          } else {
+            setHasPermission(false);
+          }
+        } else {
+          setHasPermission(true); // Fallback cho tài khoản dev ban đầu
+        }
+      } else {
+        setHasPermission(false);
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // 1. Lắng nghe dữ liệu Khách hàng
+  useEffect(() => {
+    if (hasPermission !== true) return;
+
     const q = query(collection(db, "customers"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const custData = snapshot.docs.map(doc => ({
@@ -36,13 +72,26 @@ export default function CustomersPage() {
       setCustomers(custData);
       setLoading(false);
     });
-
     return () => unsubscribe();
-  }, []);
+  }, [hasPermission]);
 
-  // 2. Xóa khách hàng trên Firebase
+  // 2. LẮNG NGHE DỮ LIỆU LỆNH THUÊ
+  useEffect(() => {
+    if (hasPermission !== true) return;
+
+    const q = query(collection(db, "rentals"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const rentalData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAllRentals(rentalData);
+    });
+    return () => unsubscribe();
+  }, [hasPermission]);
+
   const handleDeleteCustomer = async (id: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa khách hàng này khỏi hệ thống? Hành động này không thể hoàn tác.")) {
+    if (confirm("Bạn có chắc chắn muốn xóa khách hàng này khỏi hệ thống?")) {
       try {
         await deleteDoc(doc(db, "customers", id));
         if (selectedCustomer?.id === id) {
@@ -55,22 +104,17 @@ export default function CustomersPage() {
     }
   };
 
-  // Format ngày sinh tự động (DD/MM/YYYY)
   const handleDobChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let value = e.target.value.replace(/\D/g, ''); // Chỉ giữ lại số
-    if (value.length > 8) value = value.slice(0, 8); // Tối đa 8 số
-    
-    // Tự động chèn dấu '/'
+    let value = e.target.value.replace(/\D/g, ''); 
+    if (value.length > 8) value = value.slice(0, 8); 
     if (value.length > 4) {
       value = `${value.slice(0, 2)}/${value.slice(2, 4)}/${value.slice(4)}`;
     } else if (value.length > 2) {
       value = `${value.slice(0, 2)}/${value.slice(2)}`;
     }
-    
     setFormData({ ...formData, dob: value });
   };
 
-  // Các hàm xử lý Link Mạng Xã Hội
   const handleSocialLinkChange = (index: number, value: string) => {
     const newLinks = [...formData.socialLinks];
     newLinks[index] = value;
@@ -86,7 +130,6 @@ export default function CustomersPage() {
     setFormData({ ...formData, socialLinks: newLinks });
   };
 
-  // 3. Xử lý Thêm khách hàng lên Firebase
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.cccd || !formData.phone) {
@@ -104,13 +147,11 @@ export default function CustomersPage() {
         dob: formData.dob,
         socialLinks: formData.socialLinks.filter(link => link.trim() !== ""),
         status: "good",
-        totalRentals: 0,
-        history: [],
-        createdAt: serverTimestamp() // Lưu thời gian tạo để sắp xếp
+        history: [], 
+        createdAt: serverTimestamp() 
       });
 
       setIsAddModalOpen(false);
-      // Reset form
       setFormData({ name: "", cccd: "", phone: "", address: "", dob: "", socialLinks: [""] }); 
     } catch (error) {
       console.error("Lỗi khi lưu khách hàng:", error);
@@ -120,14 +161,11 @@ export default function CustomersPage() {
     }
   };
 
-  // Giả lập Quét AI
   const handleScanCCCD = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setIsScanning(true);
     setAiError(null);
-
     setTimeout(() => {
       setAiError("Tính năng quét AI đang được nâng cấp. Vui lòng thêm thủ công.");
       setIsScanning(false);
@@ -141,9 +179,42 @@ export default function CustomersPage() {
     c.cccd.includes(searchTerm)
   );
 
+  const getCustomerHistory = () => {
+    if (!selectedCustomer) return [];
+    return allRentals.filter(rental => rental.customerPhone === selectedCustomer.phone);
+  };
+
+  const customerHistory = getCustomerHistory();
+
+  // --- GIAO DIỆN KIỂM TRA PHÂN QUYỀN ---
+  
+  if (hasPermission === null) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] text-zinc-500">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+        <p className="text-sm uppercase tracking-widest animate-pulse">Đang kiểm tra dữ liệu định danh...</p>
+      </div>
+    );
+  }
+
+  if (hasPermission === false) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4 animate-in fade-in zoom-in-95">
+        <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+          <Lock className="w-10 h-10 text-red-400" />
+        </div>
+        <h2 className="text-3xl font-bold text-white mb-3">Truy cập bị từ chối</h2>
+        <p className="text-zinc-400 max-w-md mb-8">
+          Tài khoản của bạn không có đặc quyền để xem "Hồ sơ Khách hàng". 
+          Vui lòng liên hệ Quản trị viên (Admin) để được cấp thêm phân quyền.
+        </p>
+      </div>
+    );
+  }
+
+  // --- GIAO DIỆN TRANG CHÍNH ---
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
-      {/* Thông báo lỗi AI */}
+    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
       {aiError && (
         <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl flex items-center gap-3 text-red-400 animate-in fade-in zoom-in">
           <AlertCircle className="w-5 h-5" />
@@ -152,14 +223,12 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* Header & ToolBar */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
         <div>
           <h2 className="text-3xl font-normal text-white tracking-tight">Quản lý Khách hàng</h2>
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3">
-          {/* Ô tìm kiếm khách hàng */}
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <input 
@@ -189,7 +258,6 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* Grid Khách hàng */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20 text-zinc-500 bg-white/[0.02] border border-white/5 rounded-3xl">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
@@ -238,7 +306,7 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* POPUP THÊM KHÁCH HÀNG THỦ CÔNG */}
+      {/* POPUP THÊM MỚI */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
           <div className="bg-[#0c0c0e] border border-white/10 rounded-[32px] w-full max-w-2xl overflow-hidden flex flex-col shadow-2xl max-h-[90vh]">
@@ -273,35 +341,19 @@ export default function CustomersPage() {
                     <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl text-white focus:border-indigo-500 outline-none" placeholder="Quận/Huyện, Tỉnh/TP" />
                   </div>
                   
-                  {/* Khu vực Mạng Xã Hội Động */}
                   <div className="col-span-2 space-y-3">
                     <div className="flex justify-between items-end">
                       <label className="text-xs font-medium text-zinc-400 uppercase">Link Mạng xã hội</label>
-                      <button 
-                        type="button" 
-                        onClick={addSocialLink} 
-                        className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-400/10 hover:bg-indigo-400/20 px-2 py-1 rounded-md transition-all"
-                      >
+                      <button type="button" onClick={addSocialLink} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-400/10 hover:bg-indigo-400/20 px-2 py-1 rounded-md transition-all">
                         <Plus className="w-3 h-3" /> Thêm link
                       </button>
                     </div>
-                    
                     <div className="space-y-3">
                       {formData.socialLinks.map((link, index) => (
                         <div key={index} className="flex gap-2">
-                          <input 
-                            type="text" 
-                            value={link} 
-                            onChange={e => handleSocialLinkChange(index, e.target.value)} 
-                            className="w-full p-3 bg-white/5 border border-white/10 rounded-xl text-white focus:border-indigo-500 outline-none" 
-                            placeholder="facebook.com/..." 
-                          />
+                          <input type="text" value={link} onChange={e => handleSocialLinkChange(index, e.target.value)} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl text-white focus:border-indigo-500 outline-none" placeholder="facebook.com/..." />
                           {formData.socialLinks.length > 1 && (
-                            <button 
-                              type="button" 
-                              onClick={() => removeSocialLink(index)} 
-                              className="p-3 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 bg-white/5 rounded-xl transition-all"
-                            >
+                            <button type="button" onClick={() => removeSocialLink(index)} className="p-3 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 bg-white/5 rounded-xl transition-all">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           )}
@@ -309,7 +361,6 @@ export default function CustomersPage() {
                       ))}
                     </div>
                   </div>
-
                 </div>
               </form>
             </div>
@@ -325,14 +376,14 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* POPUP CHI TIẾT */}
+      {/* POPUP CHI TIẾT KHÁCH HÀNG */}
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div className="bg-[#0c0c0e] border border-white/10 rounded-[32px] w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95">
             
-            <div className="p-8 flex justify-between items-start border-b border-white/5">
+            <div className="p-8 flex justify-between items-start border-b border-white/5 shrink-0">
               <div className="flex gap-5 items-center">
-                <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 flex items-center justify-center text-2xl font-bold text-indigo-400">
+                <div className="w-16 h-16 rounded-2xl bg-indigo-600/20 flex items-center justify-center text-2xl font-bold text-indigo-400 shrink-0">
                   {selectedCustomer.name.charAt(0)}
                 </div>
                 <div>
@@ -341,11 +392,7 @@ export default function CustomersPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button 
-                  onClick={() => handleDeleteCustomer(selectedCustomer.id)}
-                  className="p-3 text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-xl transition-all"
-                  title="Xóa khách hàng"
-                >
+                <button onClick={() => handleDeleteCustomer(selectedCustomer.id)} className="p-3 text-red-400 bg-red-400/10 hover:bg-red-400/20 rounded-xl transition-all" title="Xóa khách hàng">
                   <Trash2 className="w-5 h-5" />
                 </button>
                 <button onClick={() => setSelectedCustomer(null)} className="p-3 text-zinc-500 hover:text-white bg-white/5 rounded-xl">
@@ -370,41 +417,62 @@ export default function CustomersPage() {
                 </div>
               </div>
 
+              {/* KHU VỰC HIỂN THỊ LỊCH SỬ THUÊ */}
               <div className="lg:col-span-2 p-8 bg-white/[0.01]">
                 <h4 className="text-sm font-medium text-zinc-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-                  <History className="w-4 h-4" /> Lịch sử thuê
+                  <History className="w-4 h-4" /> Lịch sử thuê ({customerHistory.length})
                 </h4>
                 
-                <div className="space-y-4">
-                  {selectedCustomer.history && selectedCustomer.history.length > 0 ? (
-                    selectedCustomer.history.map((item: any) => (
-                      <div key={item.id} className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between group hover:bg-white/[0.08] transition-all">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-indigo-500/10 rounded-lg">
+                <div className="space-y-3">
+                  {customerHistory.length > 0 ? (
+                    customerHistory.map((item: any) => (
+                      <div 
+                        key={item.id} 
+                        onClick={() => router.push('/dashboard/rentals')}
+                        className="p-4 bg-white/5 border border-white/5 rounded-2xl flex items-center justify-between group hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer relative overflow-hidden"
+                      >
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        
+                        <div className="flex items-center gap-3.5 overflow-hidden pr-3">
+                          <div className="p-2.5 bg-black/40 rounded-xl shrink-0 group-hover:bg-indigo-500/20 transition-colors">
                             <Clock className="w-4 h-4 text-indigo-400" />
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-white">{item.item}</p>
-                            <p className="text-[10px] text-zinc-500 uppercase">{item.date}</p>
+                          <div className="overflow-hidden flex flex-col justify-center">
+                            <p className="text-sm font-medium text-zinc-200 truncate group-hover:text-white transition-colors" title={item.equipmentSummary}>
+                              {item.equipmentSummary}
+                            </p>
+                            <p className="text-[10px] text-zinc-500 font-mono mt-1">
+                              {item.startDate || "..."} <span className="text-zinc-600 mx-1">→</span> {item.endDate || "..."}
+                            </p>
                           </div>
                         </div>
-                        <span className={`text-[10px] px-2 py-1 rounded-md ${
-                          item.status === 'Đang thuê' ? 'bg-amber-500/10 text-amber-500' : 'bg-emerald-500/10 text-emerald-500'
-                        }`}>
-                          {item.status}
-                        </span>
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                          <span className={`text-[10px] px-2.5 py-1 rounded-md whitespace-nowrap font-medium border ${
+                            item.status === 'Hoàn tất' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                            item.status === 'Cảnh báo trễ' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 
+                            'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          }`}>
+                            {item.status}
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-indigo-400 transition-colors opacity-0 group-hover:opacity-100" />
+                        </div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-10 opacity-30 border border-dashed border-white/10 rounded-2xl">
-                      <p className="text-sm italic">Khách hàng mới chưa có lịch sử</p>
+                    <div className="text-center py-12 border border-dashed border-white/10 rounded-3xl bg-white/[0.02]">
+                      <Clock className="w-8 h-8 text-zinc-700 mx-auto mb-3" />
+                      <p className="text-sm font-medium text-zinc-400">Chưa có lịch sử</p>
+                      <p className="text-xs text-zinc-600 mt-1">Khách hàng này chưa thuê thiết bị nào.</p>
                     </div>
                   )}
-                  
-                  <button className="w-full py-4 border border-dashed border-white/10 rounded-2xl text-xs text-zinc-500 hover:text-indigo-400 hover:border-indigo-400/50 transition-all flex items-center justify-center gap-2">
-                    Tạo đơn thuê mới cho {selectedCustomer.name.split(' ').pop()} <ChevronRight className="w-3 h-3" />
-                  </button>
                 </div>
+
+                <button 
+                  onClick={() => router.push('/dashboard/rentals')}
+                  className="w-full mt-4 py-3.5 border border-dashed border-white/10 rounded-2xl text-xs font-medium text-zinc-500 hover:text-indigo-400 hover:border-indigo-400/50 hover:bg-indigo-400/5 transition-all flex items-center justify-center gap-2"
+                >
+                  Tạo đơn thuê mới cho {selectedCustomer.name.split(' ').pop()} <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           </div>
@@ -414,7 +482,6 @@ export default function CustomersPage() {
   );
 }
 
-// Component phụ trợ InfoBox
 function InfoBox({ label, value, icon: Icon, mono = false, isLink = false }: any) {
   const isArray = Array.isArray(value);
   const displayValue = isArray ? value.filter(v => v.trim() !== '') : value;

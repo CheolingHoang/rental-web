@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, Check } from "lucide-react";
+import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, Check, Lock } from "lucide-react";
 
 export interface Rental {
   id: string;
@@ -22,6 +23,9 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function RentalsPage() {
+  // --- STATE PHÂN QUYỀN ---
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+
   const [rentals, setRentals] = useState<Rental[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -54,8 +58,35 @@ export default function RentalsPage() {
   // State cho bộ tìm kiếm thiết bị bên trong Modal
   const [equipmentSearchTerm, setEquipmentSearchTerm] = useState("");
 
-  // 1. Fetch Dữ liệu
+  // 0. KIỂM TRA PHÂN QUYỀN
   useEffect(() => {
+    const auth = getAuth();
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      if (user && user.email) {
+        const q = query(collection(db, "app_users"), where("email", "==", user.email));
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+          const userData = snapshot.docs[0].data();
+          if (userData.role === "Admin" || (userData.allowedPages && userData.allowedPages.includes("/dashboard/rentals"))) {
+            setHasPermission(true);
+          } else {
+            setHasPermission(false);
+          }
+        } else {
+          setHasPermission(true); // Fallback
+        }
+      } else {
+        setHasPermission(false);
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, []);
+
+  // 1. Fetch Dữ liệu (Chỉ chạy khi có quyền)
+  useEffect(() => {
+    if (hasPermission !== true) return;
     const q = query(collection(db, "rentals"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const rentalData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Rental[];
@@ -63,25 +94,27 @@ export default function RentalsPage() {
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [hasPermission]);
 
   useEffect(() => {
+    if (hasPermission !== true) return;
     const q = query(collection(db, "customers"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setCustomers(data);
     });
     return () => unsubscribe();
-  }, []);
+  }, [hasPermission]);
 
   useEffect(() => {
+    if (hasPermission !== true) return;
     const q = query(collection(db, "equipments"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setEquipments(data);
     });
     return () => unsubscribe();
-  }, []);
+  }, [hasPermission]);
 
   // --- HÀM XỬ LÝ FORM ---
 
@@ -109,7 +142,6 @@ export default function RentalsPage() {
     setSelectedEquipments(newSelection);
 
     const newSummary = newSelection.map(item => item.name).join(" + ");
-    // Đã fix lỗi 0 đồng: Đổi item.price thành item.pricePerDay
     const newTotal = newSelection.reduce((sum, item) => sum + (Number(item.pricePerDay) || 0), 0);
 
     setFormData(prev => ({ ...prev, equipmentSummary: newSummary, totalAmount: newTotal }));
@@ -210,7 +242,6 @@ export default function RentalsPage() {
     (eq.category && eq.category.toLowerCase().includes(equipmentSearchTerm.toLowerCase()))
   );
 
-  // Nhóm thiết bị theo category (Danh mục)
   const groupedEquipments = filteredModalEquipments.reduce((acc, eq) => {
     const category = eq.category || "Khác";
     if (!acc[category]) acc[category] = [];
@@ -218,8 +249,34 @@ export default function RentalsPage() {
     return acc;
   }, {} as Record<string, any[]>);
 
+  // --- GIAO DIỆN KIỂM TRA PHÂN QUYỀN ---
+  
+  if (hasPermission === null) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] text-zinc-500">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+        <p className="text-sm uppercase tracking-widest animate-pulse">Đang kiểm tra dữ liệu định danh...</p>
+      </div>
+    );
+  }
+
+  if (hasPermission === false) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4 animate-in fade-in zoom-in-95">
+        <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+          <Lock className="w-10 h-10 text-red-400" />
+        </div>
+        <h2 className="text-3xl font-bold text-white mb-3">Truy cập bị từ chối</h2>
+        <p className="text-zinc-400 max-w-md mb-8">
+          Tài khoản của bạn không có đặc quyền để xem "Lệnh cho thuê". 
+          Vui lòng liên hệ Quản trị viên (Admin) để được cấp thêm phân quyền.
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-7xl mx-auto space-y-8 relative">
+    <div className="max-w-7xl mx-auto space-y-8 relative animate-in fade-in duration-500">
       
       {/* Header */}
       <div className="flex justify-between items-end">
@@ -376,12 +433,11 @@ export default function RentalsPage() {
                 </div>
               </div>
 
-              {/* KHU VỰC 2: CHỌN THIẾT BỊ (ĐÃ CẬP NHẬT TÌM KIẾM VÀ NHÓM LABEL) */}
+              {/* KHU VỰC 2: CHỌN THIẾT BỊ */}
               <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 space-y-4">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs text-indigo-400 uppercase tracking-widest font-medium">2. Hệ thống thiết bị</label>
                   
-                  {/* Ô Tìm kiếm Thiết bị nhỏ gọn */}
                   {!editingId && (
                     <div className="relative w-48">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
@@ -403,7 +459,6 @@ export default function RentalsPage() {
                     ) : (
                       Object.entries(groupedEquipments).map(([category, items]: [string, any]) => (
                         <div key={category} className="space-y-2">
-                          {/* Label Phân nhóm Thiết bị */}
                           <div className="flex items-center gap-2">
                             <h5 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest bg-white/5 px-2 py-1 rounded-md">{category}</h5>
                             <div className="h-px flex-1 bg-white/5"></div>
