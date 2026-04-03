@@ -401,7 +401,7 @@ export default function RentalsPage() {
                     {Object.keys(groupedEquipments).length === 0 ? (
                       <p className="text-zinc-500 text-sm text-center py-4 border border-dashed border-white/10 rounded-xl">Không tìm thấy thiết bị nào phù hợp.</p>
                     ) : (
-                      Object.entries(groupedEquipments).map(([category, items]) => (
+                      Object.entries(groupedEquipments).map(([category, items]: [string, any]) => (
                         <div key={category} className="space-y-2">
                           {/* Label Phân nhóm Thiết bị */}
                           <div className="flex items-center gap-2">
@@ -410,8 +410,8 @@ export default function RentalsPage() {
                           </div>
                           
                           <div className="grid grid-cols-2 gap-2">
-                            {items.map(eq => {
-                              const isSelected = selectedEquipments.some(item => item.id === eq.id);
+                            {(items as any[]).map((eq: any) => {
+                              const isSelected = selectedEquipments.some((item: any) => item.id === eq.id);
                               return (
                                 <div 
                                   key={eq.id}
