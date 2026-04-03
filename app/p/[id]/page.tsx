@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { db } from "../../../lib/firebase"; 
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore"; // Đã thêm updateDoc
 import { CheckCircle2, MessageSquare, Send, X, Check, Loader2, Sparkles, AlertCircle } from "lucide-react";
 
 interface Photo {
@@ -20,6 +20,9 @@ export default function ClientProofingPage() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  
+  // State mới quản lý nút gửi
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Modal State
   const [viewPhoto, setViewPhoto] = useState<Photo | null>(null);
@@ -40,7 +43,7 @@ export default function ClientProofingPage() {
         const data = docSnap.data();
         setProject(data);
 
-        // 2. Lấy link Drive (Giả sử Tín dán link vào folder đầu tiên)
+        // 2. Lấy link Drive
         const driveLink = data.folders?.[0]?.driveLink;
         
         if (!driveLink) {
@@ -49,7 +52,7 @@ export default function ClientProofingPage() {
           return;
         }
 
-        // 3. Gọi Backend (cái API Tín vừa tạo) để móc ảnh từ Drive
+        // 3. Móc ảnh từ Drive qua API
         const response = await fetch('/api/drive', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -60,7 +63,18 @@ export default function ClientProofingPage() {
 
         if (!response.ok) throw new Error(result.error);
         
-        setPhotos(result.photos);
+        // BONUS XỊN: Giữ lại ảnh khách đã chọn nếu họ lỡ F5 lại trang
+        const savedPhotos = data.photos || [];
+        const mergedPhotos = result.photos.map((drivePhoto: any) => {
+          const saved = savedPhotos.find((p: any) => p.id === drivePhoto.id);
+          return {
+            ...drivePhoto,
+            selected: saved ? saved.selected : false,
+            note: saved ? saved.note : ""
+          };
+        });
+
+        setPhotos(mergedPhotos);
 
       } catch (error: any) {
         console.error("Lỗi:", error);
@@ -73,7 +87,7 @@ export default function ClientProofingPage() {
     fetchProjectAndImages();
   }, [id]);
 
-  // Các hàm tương tác giữ nguyên như cũ
+  // Các hàm tương tác
   const toggleSelect = (photoId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setPhotos(photos.map(p => p.id === photoId ? { ...p, selected: !p.selected } : p));
@@ -91,10 +105,35 @@ export default function ClientProofingPage() {
     setViewPhoto(null);
   };
 
-  const handleSubmit = () => {
-    const selectedPhotos = photos.filter(p => p.selected);
-    console.log("Ảnh đã chọn:", selectedPhotos);
-    alert(`Đã chốt ${selectedPhotos.length} ảnh! (Bước tiếp theo mình sẽ lưu mảng này lên Firebase cho Admin)`);
+  // HÀM XỬ LÝ GỬI DỮ LIỆU LÊN FIREBASE
+  const handleSubmit = async () => {
+    const selectedPhotos = photos.filter(p => p.selected || p.note);
+    
+    if (selectedPhotos.length === 0) {
+      alert("Bạn chưa chọn ảnh hoặc ghi chú nào!");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const projectRef = doc(db, "projects", id as string);
+      await updateDoc(projectRef, {
+        photos: selectedPhotos.map(p => ({
+          id: p.id,
+          url: p.url,
+          name: p.name,
+          note: p.note || "",
+          selected: p.selected || false
+        }))
+      });
+
+      alert(`Tuyệt vời! Đã gửi thành công ${selectedPhotos.length} ảnh cho Space Vietnam.`);
+    } catch (error) {
+      console.error("Lỗi khi lưu lên Firebase:", error);
+      alert("Có lỗi xảy ra khi gửi. Vui lòng thử lại nhé!");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isLoading) return <div className="min-h-screen bg-[#050505] flex items-center justify-center"><Loader2 className="w-8 h-8 text-indigo-500 animate-spin" /></div>;
@@ -112,9 +151,19 @@ export default function ClientProofingPage() {
         </div>
         <div className="flex items-center gap-4">
           <p className="text-sm font-medium text-white hidden sm:block">Đã chọn: <span className="text-indigo-400">{selectedCount}</span> / {photos.length}</p>
-          <button onClick={handleSubmit} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium flex items-center gap-2">
-            <Send className="w-4 h-4" /> Gửi lựa chọn
+          
+          <button 
+            onClick={handleSubmit} 
+            disabled={isSubmitting}
+            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white rounded-xl text-sm font-medium flex items-center gap-2"
+          >
+            {isSubmitting ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Đang gửi...</>
+            ) : (
+              <><Send className="w-4 h-4" /> Gửi lựa chọn</>
+            )}
           </button>
+
         </div>
       </header>
 
