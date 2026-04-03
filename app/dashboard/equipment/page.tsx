@@ -14,32 +14,37 @@ export interface Equipment {
   pricePerDay: number;
 }
 
+const formatCurrency = (amount: number) => {
+  return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
 export default function EquipmentPage() {
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [loading, setLoading] = useState(true);
   
-  // States cho tính năng Tìm kiếm & Lọc
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
 
-  // States cho tính năng danh mục
+  // Danh mục
   const [defaultCategories, setDefaultCategories] = useState(["Máy ảnh", "Ống kính", "Ánh sáng", "Phụ kiện"]);
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
 
-  // States cho Modal Thêm/Sửa thiết bị
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null); // Lưu ID nếu đang sửa
+  const [editingId, setEditingId] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState({
     name: "",
     category: "Máy ảnh",
     serialNumber: "",
-    pricePerDay: "",
+    pricePerDay: 0,
     status: "Rảnh",
   });
 
-  // 1. Lấy dữ liệu Real-time từ Firebase
+  const [displayPrice, setDisplayPrice] = useState("");
+
+  // 1. Fetch Dữ liệu
   useEffect(() => {
     const q = query(collection(db, "equipments"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -55,10 +60,9 @@ export default function EquipmentPage() {
     return () => unsubscribe();
   }, []);
 
-  // Tổng hợp tất cả danh mục (Mặc định + Đã có trong Database)
   const allCategories = Array.from(new Set([...defaultCategories, ...equipments.map(eq => eq.category)]));
 
-  // Hàm xử lý Thêm Danh mục mới ngay trong Form
+  // --- XỬ LÝ DANH MỤC ---
   const handleAddNewCategory = () => {
     if (newCategory.trim() !== "") {
       const addedCategory = newCategory.trim();
@@ -71,33 +75,50 @@ export default function EquipmentPage() {
     setNewCategory("");
   };
 
-  // 2. Xử lý Thêm mới HOẶC Cập nhật thiết bị
+  const handleDeleteCategory = () => {
+    const currentCategory = formData.category;
+    
+    // Kiểm tra xem danh mục có đang được sử dụng bởi thiết bị nào không
+    const isUsed = equipments.some(eq => eq.category === currentCategory);
+    if (isUsed) {
+      alert(`Không thể xóa danh mục "${currentCategory}" vì đang có thiết bị trong kho thuộc danh mục này!`);
+      return;
+    }
+
+    if (window.confirm(`Bạn có chắc chắn muốn xóa danh mục "${currentCategory}"?`)) {
+      // Xóa khỏi danh sách mặc định
+      const newCategories = defaultCategories.filter(cat => cat !== currentCategory);
+      setDefaultCategories(newCategories);
+      
+      // Tự động chọn danh mục đầu tiên còn lại (hoặc "Khác" nếu rỗng)
+      const remainingCategories = Array.from(new Set([...newCategories, ...equipments.map(eq => eq.category)]));
+      setFormData({ ...formData, category: remainingCategories[0] || "Khác" });
+    }
+  };
+
+  // --- XỬ LÝ FORM ---
+  const handleManualPriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawValue = e.target.value.replace(/\D/g, ""); 
+    const numValue = rawValue ? parseInt(rawValue, 10) : 0;
+    
+    setFormData(prev => ({ ...prev, pricePerDay: numValue }));
+    setDisplayPrice(rawValue ? formatCurrency(numValue) : "");
+  };
+
   const handleSaveEquipment = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
       if (editingId) {
-        // Cập nhật dữ liệu cũ
-        await updateDoc(doc(db, "equipments", editingId), {
-          name: formData.name,
-          category: formData.category,
-          serialNumber: formData.serialNumber,
-          pricePerDay: Number(formData.pricePerDay),
-          status: formData.status,
-        });
+        await updateDoc(doc(db, "equipments", editingId), { ...formData });
       } else {
-        // Thêm dữ liệu mới
         await addDoc(collection(db, "equipments"), {
-          name: formData.name,
-          category: formData.category,
-          serialNumber: formData.serialNumber,
-          pricePerDay: Number(formData.pricePerDay),
-          status: formData.status,
+          ...formData,
           createdAt: serverTimestamp()
         });
       }
       setIsModalOpen(false);
-      setEditingId(null);
+      resetForm();
     } catch (error) {
       console.error("Lỗi khi lưu thiết bị:", error);
       alert("Có lỗi xảy ra khi lưu dữ liệu!");
@@ -106,27 +127,31 @@ export default function EquipmentPage() {
     }
   };
 
-  // Hàm Mở form để Sửa
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({ name: "", category: allCategories[0] || "Máy ảnh", serialNumber: "", pricePerDay: 0, status: "Rảnh" });
+    setDisplayPrice("");
+  };
+
   const handleEditClick = (item: Equipment) => {
     setEditingId(item.id);
     setFormData({
       name: item.name,
       category: item.category,
       serialNumber: item.serialNumber,
-      pricePerDay: item.pricePerDay.toString(),
+      pricePerDay: item.pricePerDay,
       status: item.status,
     });
+    setDisplayPrice(formatCurrency(item.pricePerDay));
     setIsModalOpen(true);
   };
 
-  // 3. Xử lý Xóa thiết bị
   const handleDelete = async (id: string) => {
     if (window.confirm("Bạn có chắc chắn muốn xóa thiết bị này khỏi hệ thống?")) {
       await deleteDoc(doc(db, "equipments", id));
     }
   };
 
-  // 4. Lọc dữ liệu dựa trên ô tìm kiếm
   const filteredEquipments = equipments.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           item.serialNumber.toLowerCase().includes(searchTerm.toLowerCase());
@@ -156,11 +181,7 @@ export default function EquipmentPage() {
           <h2 className="text-3xl font-normal text-white tracking-tight">Thiết bị & Tài sản</h2>
         </div>
         <button 
-          onClick={() => {
-            setEditingId(null);
-            setFormData({ name: "", category: allCategories[0] || "Máy ảnh", serialNumber: "", pricePerDay: "", status: "Rảnh" });
-            setIsModalOpen(true);
-          }}
+          onClick={() => { resetForm(); setIsModalOpen(true); }}
           className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
         >
           <Plus className="w-4 h-4" />
@@ -226,26 +247,18 @@ export default function EquipmentPage() {
                   <td className="px-6 py-4 font-mono text-xs text-zinc-300">{item.serialNumber}</td>
                   <td className="px-6 py-4">{item.category}</td>
                   <td className="px-6 py-4 font-medium text-indigo-300">
-                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.pricePerDay)}
+                    {item.pricePerDay ? item.pricePerDay.toLocaleString('vi-VN') : 0} đ
                   </td>
                   <td className="px-6 py-4">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
                       {item.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right flex justify-end gap-2">
-                    <button 
-                      onClick={() => handleEditClick(item)}
-                      className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10"
-                      title="Sửa thiết bị"
-                    >
+                  <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa thiết bị">
                       <Edit2 className="w-4 h-4" />
                     </button>
-                    <button 
-                      onClick={() => handleDelete(item.id)}
-                      className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10"
-                      title="Xóa thiết bị"
-                    >
+                    <button onClick={() => handleDelete(item.id)} className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Xóa thiết bị">
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </td>
@@ -256,7 +269,7 @@ export default function EquipmentPage() {
         )}
       </div>
 
-      {/* Modal Thêm/Sửa thiết bị mới (Popup) */}
+      {/* Modal Thêm/Sửa thiết bị */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
@@ -276,7 +289,6 @@ export default function EquipmentPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-5">
-                {/* Khu vực chọn Danh mục mới / cũ */}
                 <div>
                   <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Danh mục</label>
                   {isAddingCategory ? (
@@ -319,6 +331,15 @@ export default function EquipmentPage() {
                       >
                         <Plus className="w-4 h-4" />
                       </button>
+                      {/* Nút XÓA Danh mục */}
+                      <button 
+                        type="button" 
+                        onClick={handleDeleteCategory}
+                        className="px-3 py-2.5 bg-white/5 hover:bg-red-500/10 border border-white/10 rounded-xl text-zinc-500 hover:text-red-400 transition-colors flex items-center justify-center shrink-0"
+                        title="Xóa danh mục hiện tại"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -332,7 +353,17 @@ export default function EquipmentPage() {
               <div className="grid grid-cols-2 gap-5">
                 <div>
                   <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Giá thuê / Ngày (VNĐ)</label>
-                  <input required type="number" value={formData.pricePerDay} onChange={e => setFormData({...formData, pricePerDay: e.target.value})} className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all" placeholder="VD: 500000" />
+                  <div className="relative">
+                    <input 
+                      required 
+                      type="text" 
+                      value={displayPrice} 
+                      onChange={handleManualPriceChange} 
+                      className="w-full pl-4 pr-8 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all" 
+                      placeholder="VD: 500.000" 
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm pointer-events-none">đ</span>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Trạng thái đầu vào</label>
