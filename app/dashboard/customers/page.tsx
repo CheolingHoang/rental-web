@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc } from "firebase/firestore";
+import { db } from "../../../lib/firebase"; // Đảm bảo đường dẫn này đúng
 import { 
   Users, Search, ScanFace, Plus, X, MapPin, Link as LinkIcon, 
   CreditCard, Phone, Calendar, UserCheck, Loader2, Trash2, 
@@ -9,24 +11,46 @@ import {
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true); // Thêm state loading
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // State cho Modal Thêm thủ công (socialLinks chuyển thành mảng)
+  // State cho Modal Thêm thủ công
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Trạng thái đang lưu Firebase
   const [formData, setFormData] = useState({
     name: "", cccd: "", phone: "", address: "", dob: "", socialLinks: [""]
   });
 
-  // Xóa khách hàng
-  const handleDeleteCustomer = (id: string) => {
-    if (confirm("Bạn có chắc chắn muốn xóa khách hàng này khỏi hệ thống?")) {
-      setCustomers(customers.filter(c => c.id !== id));
-      if (selectedCustomer?.id === id) {
-        setSelectedCustomer(null);
+  // 1. Lắng nghe dữ liệu Khách hàng từ Firebase (Real-time)
+  useEffect(() => {
+    const q = query(collection(db, "customers"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const custData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCustomers(custData);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Xóa khách hàng trên Firebase
+  const handleDeleteCustomer = async (id: string) => {
+    if (confirm("Bạn có chắc chắn muốn xóa khách hàng này khỏi hệ thống? Hành động này không thể hoàn tác.")) {
+      try {
+        await deleteDoc(doc(db, "customers", id));
+        if (selectedCustomer?.id === id) {
+          setSelectedCustomer(null);
+        }
+      } catch (error) {
+        console.error("Lỗi khi xóa khách hàng:", error);
+        alert("Có lỗi xảy ra khi xóa!");
       }
     }
   };
@@ -62,28 +86,38 @@ export default function CustomersPage() {
     setFormData({ ...formData, socialLinks: newLinks });
   };
 
-  // Xử lý Thêm khách hàng thủ công
-  const handleAddCustomer = (e: React.FormEvent) => {
+  // 3. Xử lý Thêm khách hàng lên Firebase
+  const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.cccd || !formData.phone) {
       alert("Vui lòng điền ít nhất Tên, CCCD và Số điện thoại!");
       return;
     }
 
-    const newCustomer = {
-      id: Date.now().toString(),
-      ...formData,
-      // Lọc bỏ các ô link rỗng trước khi lưu
-      socialLinks: formData.socialLinks.filter(link => link.trim() !== ""),
-      status: "good",
-      totalRentals: 0,
-      history: []
-    };
+    setIsSubmitting(true);
+    try {
+      await addDoc(collection(db, "customers"), {
+        name: formData.name,
+        cccd: formData.cccd,
+        phone: formData.phone,
+        address: formData.address,
+        dob: formData.dob,
+        socialLinks: formData.socialLinks.filter(link => link.trim() !== ""),
+        status: "good",
+        totalRentals: 0,
+        history: [],
+        createdAt: serverTimestamp() // Lưu thời gian tạo để sắp xếp
+      });
 
-    setCustomers([newCustomer, ...customers]);
-    setIsAddModalOpen(false);
-    // Reset form
-    setFormData({ name: "", cccd: "", phone: "", address: "", dob: "", socialLinks: [""] }); 
+      setIsAddModalOpen(false);
+      // Reset form
+      setFormData({ name: "", cccd: "", phone: "", address: "", dob: "", socialLinks: [""] }); 
+    } catch (error) {
+      console.error("Lỗi khi lưu khách hàng:", error);
+      alert("Có lỗi xảy ra khi lưu lên hệ thống!");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Giả lập Quét AI
@@ -101,6 +135,12 @@ export default function CustomersPage() {
     }, 1500);
   };
 
+  const filteredCustomers = customers.filter(c => 
+    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.phone.includes(searchTerm) ||
+    c.cccd.includes(searchTerm)
+  );
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       {/* Thông báo lỗi AI */}
@@ -117,38 +157,60 @@ export default function CustomersPage() {
         <div>
           <h2 className="text-3xl font-normal text-white tracking-tight">Quản lý Khách hàng</h2>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => setIsAddModalOpen(true)} 
-            className="px-5 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl flex items-center gap-2 hover:bg-white/10 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            Thêm thủ công
-          </button>
+        
+        <div className="flex flex-col sm:flex-row gap-3">
+          {/* Ô tìm kiếm khách hàng */}
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input 
+              type="text" 
+              placeholder="Tìm tên, SĐT, CCCD..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500/50"
+            />
+          </div>
 
-          <input type="file" ref={fileInputRef} onChange={handleScanCCCD} className="hidden" />
-          <button onClick={() => fileInputRef.current?.click()} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-2 transition-all">
-            {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
-            Quét CCCD (AI)
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setIsAddModalOpen(true)} 
+              className="px-4 py-2.5 bg-white/5 border border-white/10 text-white rounded-xl flex items-center gap-2 hover:bg-white/10 transition-all text-sm whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              Thêm thủ công
+            </button>
+
+            <input type="file" ref={fileInputRef} onChange={handleScanCCCD} className="hidden" />
+            <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-2 transition-all text-sm whitespace-nowrap">
+              {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanFace className="w-4 h-4" />}
+              Quét CCCD
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Grid Khách hàng */}
-      {customers.length === 0 ? (
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 text-zinc-500 bg-white/[0.02] border border-white/5 rounded-3xl">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+          <p className="text-sm uppercase tracking-widest animate-pulse">Đang tải dữ liệu khách hàng...</p>
+        </div>
+      ) : filteredCustomers.length === 0 ? (
         <div className="text-center py-20 bg-white/[0.02] border border-white/5 rounded-3xl">
           <Users className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
-          <p className="text-zinc-400">Chưa có khách hàng nào trong hệ thống.</p>
-          <button 
-            onClick={() => setIsAddModalOpen(true)}
-            className="mt-4 text-indigo-400 text-sm hover:underline"
-          >
-            Thêm khách hàng đầu tiên
-          </button>
+          <p className="text-zinc-400">Không tìm thấy khách hàng nào.</p>
+          {!searchTerm && (
+            <button 
+              onClick={() => setIsAddModalOpen(true)}
+              className="mt-4 text-indigo-400 text-sm hover:underline"
+            >
+              Thêm khách hàng đầu tiên
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase())).map((customer) => (
+          {filteredCustomers.map((customer) => (
             <div 
               key={customer.id} 
               onClick={() => setSelectedCustomer(customer)} 
@@ -204,7 +266,6 @@ export default function CustomersPage() {
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-medium text-zinc-400 uppercase">Ngày sinh</label>
-                    {/* Sử dụng hàm handleDobChange ở đây */}
                     <input type="text" value={formData.dob} onChange={handleDobChange} className="w-full p-3 bg-white/5 border border-white/10 rounded-xl text-white focus:border-indigo-500 outline-none placeholder:text-zinc-600" placeholder="DD/MM/YYYY" />
                   </div>
                   <div className="col-span-2 space-y-2">
@@ -255,8 +316,9 @@ export default function CustomersPage() {
 
             <div className="p-6 border-t border-white/5 flex justify-end gap-3 shrink-0 bg-[#0c0c0e]">
               <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-5 py-2.5 text-zinc-400 hover:text-white transition-all">Hủy</button>
-              <button form="add-customer-form" type="submit" className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-2 transition-all">
-                <Save className="w-4 h-4" /> Lưu khách hàng
+              <button form="add-customer-form" type="submit" disabled={isSubmitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-2 transition-all disabled:opacity-50">
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
+                Lưu khách hàng
               </button>
             </div>
           </div>
@@ -303,7 +365,6 @@ export default function CustomersPage() {
                     <InfoBox label="Địa chỉ thường trú" value={selectedCustomer.address || "Chưa cập nhật"} icon={MapPin} />
                   </div>
                   <div className="col-span-2">
-                    {/* Truyền mảng socialLinks vào InfoBox */}
                     <InfoBox label="Mạng xã hội" value={selectedCustomer.socialLinks} icon={LinkIcon} isLink />
                   </div>
                 </div>
@@ -353,9 +414,8 @@ export default function CustomersPage() {
   );
 }
 
-// Component phụ trợ InfoBox đã cập nhật để xử lý mảng Link
+// Component phụ trợ InfoBox
 function InfoBox({ label, value, icon: Icon, mono = false, isLink = false }: any) {
-  // Kiểm tra xem value có phải mảng (dành cho social links) hay không
   const isArray = Array.isArray(value);
   const displayValue = isArray ? value.filter(v => v.trim() !== '') : value;
   const hasContent = isArray ? displayValue.length > 0 : !!displayValue && displayValue !== "Chưa cập nhật";
@@ -369,14 +429,12 @@ function InfoBox({ label, value, icon: Icon, mono = false, isLink = false }: any
         {isLink ? (
           hasContent ? (
             isArray ? (
-              // Nếu là mảng link, map ra từng thẻ <a>
               displayValue.map((link: string, i: number) => (
                 <a key={i} href={link.includes('http') ? link : `https://${link}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline truncate block">
                   {link}
                 </a>
               ))
             ) : (
-              // Backup cho trường hợp data cũ chỉ có 1 link dạng string
               <a href={value.includes('http') ? value : `https://${value}`} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline truncate block">
                 {value}
               </a>
