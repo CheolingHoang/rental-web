@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getAuth, onAuthStateChanged } from "firebase/auth"; // Thêm Auth để lấy email user
+import { getAuth, onAuthStateChanged } from "firebase/auth"; 
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { Plus, Search, Wrench, Loader2, X, Trash2, Camera, Check, Edit2, Lock } from "lucide-react"; // Đã thêm icon Lock
+import { Plus, Search, Wrench, Loader2, X, Trash2, Camera, Check, Edit2, Lock, PackageCheck } from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
 
 export interface Equipment {
   id: string;
@@ -20,8 +21,7 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function EquipmentPage() {
-  // --- STATE PHÂN QUYỀN (RBAC) ---
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null); // null = đang kiểm tra
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   const [equipments, setEquipments] = useState<Equipment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,40 +47,32 @@ export default function EquipmentPage() {
 
   const [displayPrice, setDisplayPrice] = useState("");
 
-  // 0. KIỂM TRA PHÂN QUYỀN TRƯỚC KHI TẢI DỮ LIỆU
   useEffect(() => {
     const auth = getAuth();
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user && user.email) {
-        // Quét trong bảng app_users xem email này có quyền không
         const q = query(collection(db, "app_users"), where("email", "==", user.email));
         const snapshot = await getDocs(q);
         
         if (!snapshot.empty) {
           const userData = snapshot.docs[0].data();
-          // Kiểm tra xem Role là Admin hoặc trong danh sách allowedPages có chứa link trang này không
           if (userData.role === "Admin" || (userData.allowedPages && userData.allowedPages.includes("/dashboard/equipment"))) {
             setHasPermission(true);
           } else {
             setHasPermission(false);
           }
         } else {
-          // Fallback: Nếu không tìm thấy trong danh sách (có thể là tk của bạn lúc mới dev), cứ cho qua
           setHasPermission(true);
         }
       } else {
-        setHasPermission(false); // Chưa đăng nhập
+        setHasPermission(false); 
       }
     });
-
     return () => unsubscribeAuth();
   }, []);
 
-  // 1. Fetch Dữ liệu Thiết bị
   useEffect(() => {
-    // Chỉ tải dữ liệu nếu đã có quyền (tiết kiệm số lượt đọc Firebase)
     if (hasPermission !== true) return; 
-
     const q = query(collection(db, "equipments"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const equipData = snapshot.docs.map(doc => ({
@@ -91,13 +83,16 @@ export default function EquipmentPage() {
       setEquipments(equipData);
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, [hasPermission]);
 
   const allCategories = Array.from(new Set([...defaultCategories, ...equipments.map(eq => eq.category)]));
 
-  // --- XỬ LÝ DANH MỤC ---
+  const availableCount = equipments.filter(eq => 
+    eq.status === "Rảnh" && 
+    (filterCategory === "all" || eq.category === filterCategory)
+  ).length;
+
   const handleAddNewCategory = () => {
     if (newCategory.trim() !== "") {
       const addedCategory = newCategory.trim();
@@ -105,6 +100,7 @@ export default function EquipmentPage() {
         setDefaultCategories([...defaultCategories, addedCategory]);
       }
       setFormData({ ...formData, category: addedCategory });
+      toast.success("Đã thêm danh mục mới!");
     }
     setIsAddingCategory(false);
     setNewCategory("");
@@ -114,7 +110,7 @@ export default function EquipmentPage() {
     const currentCategory = formData.category;
     const isUsed = equipments.some(eq => eq.category === currentCategory);
     if (isUsed) {
-      alert(`Không thể xóa danh mục "${currentCategory}" vì đang có thiết bị trong kho thuộc danh mục này!`);
+      toast.error(`Không thể xóa danh mục "${currentCategory}" vì đang có thiết bị trong kho thuộc danh mục này!`);
       return;
     }
 
@@ -123,10 +119,10 @@ export default function EquipmentPage() {
       setDefaultCategories(newCategories);
       const remainingCategories = Array.from(new Set([...newCategories, ...equipments.map(eq => eq.category)]));
       setFormData({ ...formData, category: remainingCategories[0] || "Khác" });
+      toast.success("Đã xóa danh mục!");
     }
   };
 
-  // --- XỬ LÝ FORM ---
   const handleManualPriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawValue = e.target.value.replace(/\D/g, ""); 
     const numValue = rawValue ? parseInt(rawValue, 10) : 0;
@@ -141,19 +137,31 @@ export default function EquipmentPage() {
     try {
       if (editingId) {
         await updateDoc(doc(db, "equipments", editingId), { ...formData });
+        toast.success("Đã cập nhật thiết bị!");
       } else {
         await addDoc(collection(db, "equipments"), {
           ...formData,
           createdAt: serverTimestamp()
         });
+        toast.success("Đã thêm thiết bị mới!");
       }
       setIsModalOpen(false);
       resetForm();
     } catch (error) {
-      console.error("Lỗi khi lưu thiết bị:", error);
-      alert("Có lỗi xảy ra khi lưu dữ liệu!");
+      console.error("Lỗi khi lưu:", error);
+      toast.error("Có lỗi xảy ra khi lưu dữ liệu!");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleMaintenance = async (eq: Equipment) => {
+    const newStatus = eq.status === "Bảo trì" ? "Rảnh" : "Bảo trì";
+    try {
+      await updateDoc(doc(db, "equipments", eq.id), { status: newStatus });
+      toast.success(newStatus === "Bảo trì" ? "Đã chuyển máy đi bảo trì!" : "Đã nhận máy về kho!");
+    } catch (error) {
+      toast.error("Lỗi khi cập nhật!");
     }
   };
 
@@ -178,7 +186,12 @@ export default function EquipmentPage() {
 
   const handleDelete = async (id: string) => {
     if (window.confirm("Bạn có chắc chắn muốn xóa thiết bị này khỏi hệ thống?")) {
-      await deleteDoc(doc(db, "equipments", id));
+      try {
+        await deleteDoc(doc(db, "equipments", id));
+        toast.success("Đã xóa thiết bị!");
+      } catch (error) {
+        toast.error("Lỗi khi xóa!");
+      }
     }
   };
 
@@ -198,9 +211,6 @@ export default function EquipmentPage() {
     }
   };
 
-  // --- GIAO DIỆN KIỂM TRA PHÂN QUYỀN ---
-  
-  // 1. Màn hình Loading khi đang check DB
   if (hasPermission === null) {
     return (
       <div className="flex flex-col items-center justify-center h-[70vh] text-zinc-500">
@@ -210,7 +220,6 @@ export default function EquipmentPage() {
     );
   }
 
-  // 2. Màn hình cấm truy cập
   if (hasPermission === false) {
     return (
       <div className="flex flex-col items-center justify-center h-[70vh] text-center px-4 animate-in fade-in zoom-in-95">
@@ -226,11 +235,13 @@ export default function EquipmentPage() {
     );
   }
 
-  // 3. Nếu qua ải kiểm tra -> Hiển thị trang bình thường
   return (
     <div className="max-w-7xl mx-auto space-y-8 relative animate-in fade-in duration-500">
       
-      {/* Header */}
+      <Toaster position="top-right" toastOptions={{
+        style: { background: '#18181b', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+      }} />
+
       <div className="flex justify-between items-end">
         <div>
           <div className="flex items-center gap-2 mb-2">
@@ -248,8 +259,7 @@ export default function EquipmentPage() {
         </button>
       </div>
 
-      {/* Bộ lọc & Tìm kiếm */}
-      <div className="flex gap-4">
+      <div className="flex flex-col sm:flex-row gap-4 items-center">
         <div className="relative w-full max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
           <input 
@@ -260,6 +270,7 @@ export default function EquipmentPage() {
             className="w-full pl-11 pr-4 py-2.5 bg-white/[0.02] border border-white/5 rounded-xl text-sm text-white placeholder-zinc-600 focus:bg-white/5 focus:border-indigo-500/30 focus:ring-1 focus:ring-indigo-500/50 outline-none transition-all"
           />
         </div>
+        
         <div className="relative min-w-[200px]">
           <select 
             value={filterCategory}
@@ -273,9 +284,15 @@ export default function EquipmentPage() {
           </select>
           <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>
         </div>
+
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl whitespace-nowrap">
+          <PackageCheck className="w-4 h-4 text-emerald-400" />
+          <span className="text-sm font-medium text-emerald-400">
+            Sẵn sàng: <span className="font-bold">{availableCount}</span> máy
+          </span>
+        </div>
       </div>
 
-      {/* Danh sách thiết bị */}
       <div className="bg-white/[0.02] rounded-2xl border border-white/5 backdrop-blur-md overflow-hidden min-h-[400px] shadow-xl">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
@@ -309,9 +326,20 @@ export default function EquipmentPage() {
                     {item.pricePerDay ? item.pricePerDay.toLocaleString('vi-VN') : 0} đ
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
-                      {item.status}
-                    </span>
+                    {/* Đã gỡ bỏ tính năng select, chỉ còn label hiển thị và nút bảo trì */}
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
+                        {item.status}
+                      </span>
+
+                      <button 
+                        onClick={() => handleToggleMaintenance(item)} 
+                        className={`p-1.5 rounded-md transition-colors ${item.status === 'Bảo trì' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-white/5 text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10'}`}
+                        title={item.status === 'Bảo trì' ? "Đã sửa xong, trả về kho" : "Chuyển máy đi bảo trì"}
+                      >
+                        {item.status === 'Bảo trì' ? <Check className="w-3.5 h-3.5" /> : <Wrench className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa thiết bị">
@@ -328,7 +356,6 @@ export default function EquipmentPage() {
         )}
       </div>
 
-      {/* Modal Thêm/Sửa thiết bị */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
@@ -390,7 +417,6 @@ export default function EquipmentPage() {
                       >
                         <Plus className="w-4 h-4" />
                       </button>
-                      {/* Nút XÓA Danh mục */}
                       <button 
                         type="button" 
                         onClick={handleDeleteCategory}
@@ -427,13 +453,20 @@ export default function EquipmentPage() {
                 <div>
                   <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Trạng thái đầu vào</label>
                   <div className="relative">
-                    <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none appearance-none transition-all">
+                    {/* Khóa khung trạng thái khi đang ở chế độ Sửa (editingId !== null) */}
+                    <select 
+                      disabled={!!editingId}
+                      value={formData.status} 
+                      onChange={e => setFormData({...formData, status: e.target.value})} 
+                      className={`w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:outline-none transition-all ${editingId ? 'opacity-50 cursor-not-allowed' : 'focus:border-indigo-500/50 appearance-none'}`}
+                    >
                       <option>Rảnh</option>
                       <option>Đang thuê</option>
                       <option>Bảo trì</option>
                     </select>
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>
+                    {!editingId && <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>}
                   </div>
+                  {editingId && <p className="text-[10px] text-zinc-500 mt-1">Trạng thái được tự động hóa. Không thể sửa tay.</p>}
                 </div>
               </div>
 

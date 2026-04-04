@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs, writeBatch } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, Check, Lock } from "lucide-react";
+import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, ShieldCheck, Lock, AlertCircle, AlertTriangle } from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
 
 export interface Rental {
   id: string;
@@ -12,6 +13,7 @@ export interface Rental {
   customerName: string;
   customerPhone: string;
   equipmentSummary: string;
+  equipmentIds?: string[]; 
   startDate: string;
   endDate: string;
   totalAmount: number;
@@ -23,7 +25,6 @@ const formatCurrency = (amount: number) => {
 };
 
 export default function RentalsPage() {
-  // --- STATE PHÂN QUYỀN ---
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   const [rentals, setRentals] = useState<Rental[]>([]);
@@ -32,11 +33,9 @@ export default function RentalsPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [equipments, setEquipments] = useState<any[]>([]);
 
-  // Lọc ở ngoài danh sách
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("Tất cả");
 
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -45,20 +44,27 @@ export default function RentalsPage() {
     customerName: "",
     customerPhone: "",
     equipmentSummary: "",
+    equipmentIds: [] as string[],
     startDate: "",
     endDate: "",
     totalAmount: 0,
-    status: "Đang hoạt động",
+    status: "Đang thuê", 
   });
 
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedEquipments, setSelectedEquipments] = useState<any[]>([]);
   const [displayPrice, setDisplayPrice] = useState("");
-  
-  // State cho bộ tìm kiếm thiết bị bên trong Modal
   const [equipmentSearchTerm, setEquipmentSearchTerm] = useState("");
 
-  // 0. KIỂM TRA PHÂN QUYỀN
+  // NÂNG CẤP: State cho Hộp thoại Xác nhận Custom (Thay thế window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    type: "danger", // 'danger' | 'success'
+    onConfirm: () => {}
+  });
+
   useEffect(() => {
     const auth = getAuth();
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
@@ -74,17 +80,15 @@ export default function RentalsPage() {
             setHasPermission(false);
           }
         } else {
-          setHasPermission(true); // Fallback
+          setHasPermission(true); 
         }
       } else {
         setHasPermission(false);
       }
     });
-
     return () => unsubscribeAuth();
   }, []);
 
-  // 1. Fetch Dữ liệu (Chỉ chạy khi có quyền)
   useEffect(() => {
     if (hasPermission !== true) return;
     const q = query(collection(db, "rentals"), orderBy("createdAt", "desc"));
@@ -108,15 +112,13 @@ export default function RentalsPage() {
 
   useEffect(() => {
     if (hasPermission !== true) return;
-    const q = query(collection(db, "equipments"));
+    const q = query(collection(db, "equipments"), where("status", "==", "Rảnh"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setEquipments(data);
     });
     return () => unsubscribe();
   }, [hasPermission]);
-
-  // --- HÀM XỬ LÝ FORM ---
 
   const handleCustomerSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
@@ -140,11 +142,15 @@ export default function RentalsPage() {
     }
     
     setSelectedEquipments(newSelection);
-
     const newSummary = newSelection.map(item => item.name).join(" + ");
     const newTotal = newSelection.reduce((sum, item) => sum + (Number(item.pricePerDay) || 0), 0);
 
-    setFormData(prev => ({ ...prev, equipmentSummary: newSummary, totalAmount: newTotal }));
+    setFormData(prev => ({ 
+      ...prev, 
+      equipmentSummary: newSummary, 
+      totalAmount: newTotal,
+      equipmentIds: newSelection.map(item => item.id) 
+    }));
     setDisplayPrice(formatCurrency(newTotal));
   };
 
@@ -158,34 +164,80 @@ export default function RentalsPage() {
 
   const handleSaveRental = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.customerName) return alert("Vui lòng chọn khách hàng!");
-    if (!formData.equipmentSummary) return alert("Vui lòng chọn ít nhất 1 thiết bị!");
+    if (!formData.customerName) return toast.error("Vui lòng chọn khách hàng!");
+    if (!formData.equipmentSummary) return toast.error("Vui lòng chọn ít nhất 1 thiết bị!");
 
     setIsSubmitting(true);
     try {
+      const batch = writeBatch(db);
+
       if (editingId) {
-        await updateDoc(doc(db, "rentals", editingId), { ...formData });
+        const rentalRef = doc(db, "rentals", editingId);
+        const { status, ...updateData } = formData; 
+        batch.update(rentalRef, { ...updateData });
       } else {
         const newOrderCode = `RN-${Math.floor(1000 + Math.random() * 9000)}`;
-        await addDoc(collection(db, "rentals"), {
+        const newRentalRef = doc(collection(db, "rentals"));
+        
+        batch.set(newRentalRef, {
           orderCode: newOrderCode,
           ...formData,
           createdAt: serverTimestamp()
         });
+
+        selectedEquipments.forEach((eq) => {
+          const eqRef = doc(db, "equipments", eq.id);
+          batch.update(eqRef, { status: "Đang thuê" }); 
+        });
       }
+
+      await batch.commit();
       setIsModalOpen(false);
       resetForm();
+      toast.success(editingId ? "Cập nhật lệnh thành công!" : "Tạo lệnh thuê thành công!");
     } catch (error) {
       console.error("Lỗi khi lưu lệnh:", error);
-      alert("Có lỗi xảy ra khi lưu dữ liệu!");
+      toast.error("Có lỗi xảy ra khi lưu dữ liệu!");
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // NÂNG CẤP: Dùng Hộp thoại Custom thay cho window.confirm
+  const handleConfirmReturn = (rental: Rental) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: "success",
+      title: "Xác nhận thu hồi máy",
+      message: `Bạn xác nhận khách [${rental.customerName}] đã thanh toán đủ và trả lại toàn bộ máy?\n\nHành động này sẽ KHÓA vĩnh viễn lệnh thuê này!`,
+      onConfirm: async () => {
+        try {
+          const batch = writeBatch(db);
+          const rentalRef = doc(db, "rentals", rental.id);
+          batch.update(rentalRef, { status: "Hoàn tất" });
+  
+          if (rental.equipmentIds && rental.equipmentIds.length > 0) {
+            rental.equipmentIds.forEach(eqId => {
+              const eqRef = doc(db, "equipments", eqId);
+              batch.update(eqRef, { status: "Rảnh" });
+            });
+          }
+  
+          await batch.commit();
+          toast.success("Đã chốt đơn và nhận lại máy thành công!");
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        } catch (error) {
+          console.error("Lỗi xác nhận trả máy:", error);
+          toast.error("Không thể chốt đơn lúc này!");
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
   const resetForm = () => {
     setEditingId(null);
-    setFormData({ customerName: "", customerPhone: "", equipmentSummary: "", startDate: "", endDate: "", totalAmount: 0, status: "Đang hoạt động" });
+    setFormData({ customerName: "", customerPhone: "", equipmentSummary: "", equipmentIds: [], startDate: "", endDate: "", totalAmount: 0, status: "Đang thuê" });
     setSelectedCustomerId("");
     setSelectedEquipments([]);
     setDisplayPrice("");
@@ -198,6 +250,7 @@ export default function RentalsPage() {
       customerName: item.customerName,
       customerPhone: item.customerPhone || "",
       equipmentSummary: item.equipmentSummary,
+      equipmentIds: item.equipmentIds || [], 
       startDate: item.startDate || "",
       endDate: item.endDate || "",
       totalAmount: item.totalAmount,
@@ -207,36 +260,71 @@ export default function RentalsPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Bạn có chắc chắn muốn xóa lệnh thuê này?")) {
-      await deleteDoc(doc(db, "rentals", id));
+  // NÂNG CẤP: Dùng Hộp thoại Custom thay cho window.confirm
+  const handleDelete = (id: string, status: string) => {
+    const isLocked = status === "Hoàn tất";
+    
+    setConfirmDialog({
+      isOpen: true,
+      type: "danger",
+      title: "Xóa lệnh thuê",
+      message: isLocked 
+        ? "Bạn có chắc chắn muốn xóa lịch sử lệnh thuê này?" 
+        : "CẢNH BÁO: Lệnh này CHƯA HOÀN TẤT.\n\nXóa lệnh sẽ làm mất dữ liệu công nợ và bạn phải tự chỉnh lại số lượng thiết bị trong kho bằng tay. Vẫn muốn xóa?",
+      onConfirm: async () => {
+        try {
+          await deleteDoc(doc(db, "rentals", id));
+          toast.success("Đã xóa lệnh thuê!");
+        } catch (error) {
+          toast.error("Không thể xóa lệnh này!");
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const getDynamicStatus = (item: Rental) => {
+    if (item.status === "Hoàn tất") return "Hoàn tất";
+    
+    if (item.endDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); 
+      const endDate = new Date(item.endDate);
+      endDate.setHours(0, 0, 0, 0);
+      
+      if (today > endDate) return "Quá hạn"; 
     }
+    return "Đang thuê";
   };
 
   const filteredRentals = rentals.filter(item => {
+    const dynamicStatus = getDynamicStatus(item);
     const matchesSearch = item.orderCode.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           item.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (item.customerPhone && item.customerPhone.includes(searchTerm));
     
     let matchesStatus = true;
-    if (filterStatus === "Đang thuê") matchesStatus = item.status === "Đang hoạt động" || item.status === "Đang thuê";
-    if (filterStatus === "Cảnh báo") matchesStatus = item.status === "Cảnh báo trễ";
+    if (filterStatus === "Đang thuê") matchesStatus = dynamicStatus === "Đang thuê";
+    if (filterStatus === "Cảnh báo") matchesStatus = dynamicStatus === "Quá hạn";
+    if (filterStatus === "Hoàn tất") matchesStatus = dynamicStatus === "Hoàn tất";
     
     return matchesSearch && matchesStatus;
   });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Đang hoạt động': 
-      case 'Đang thuê': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
-      case 'Cảnh báo trễ': return 'text-rose-400 bg-rose-500/10 border-rose-500/20 animate-pulse';
-      case 'Chờ AI duyệt': return 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20';
-      case 'Hoàn tất': return 'text-zinc-300 bg-white/10 border-white/10';
-      default: return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
+  const getStatusBadge = (dynamicStatus: string) => {
+    switch (dynamicStatus) {
+      case 'Đang thuê': 
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border text-emerald-400 bg-emerald-400/10 border-emerald-400/20"><Sparkles className="w-3 h-3"/> Đang thuê</span>;
+      case 'Quá hạn': 
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border text-rose-400 bg-rose-500/10 border-rose-500/20 animate-pulse"><AlertCircle className="w-3 h-3"/> Quá hạn</span>;
+      case 'Hoàn tất': 
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border text-zinc-300 bg-white/10 border-white/10"><Lock className="w-3 h-3"/> Đã khóa</span>;
+      default: 
+        return <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border text-amber-400 bg-amber-400/10 border-amber-400/20">{dynamicStatus}</span>;
     }
   };
 
-  // --- XỬ LÝ NHÓM THIẾT BỊ ---
   const filteredModalEquipments = equipments.filter(eq =>
     eq.name.toLowerCase().includes(equipmentSearchTerm.toLowerCase()) ||
     (eq.category && eq.category.toLowerCase().includes(equipmentSearchTerm.toLowerCase()))
@@ -248,8 +336,6 @@ export default function RentalsPage() {
     acc[category].push(eq);
     return acc;
   }, {} as Record<string, any[]>);
-
-  // --- GIAO DIỆN KIỂM TRA PHÂN QUYỀN ---
   
   if (hasPermission === null) {
     return (
@@ -269,7 +355,6 @@ export default function RentalsPage() {
         <h2 className="text-3xl font-bold text-white mb-3">Truy cập bị từ chối</h2>
         <p className="text-zinc-400 max-w-md mb-8">
           Tài khoản của bạn không có đặc quyền để xem "Lệnh cho thuê". 
-          Vui lòng liên hệ Quản trị viên (Admin) để được cấp thêm phân quyền.
         </p>
       </div>
     );
@@ -277,8 +362,10 @@ export default function RentalsPage() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 relative animate-in fade-in duration-500">
-      
-      {/* Header */}
+      <Toaster position="top-right" toastOptions={{
+        style: { background: '#18181b', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
+      }} />
+
       <div className="flex justify-between items-end">
         <div>
           <div className="flex items-center gap-2 mb-2">
@@ -293,12 +380,11 @@ export default function RentalsPage() {
             className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
           >
             <Plus className="w-4 h-4" />
-            Lệnh thủ công
+            Tạo lệnh mới
           </button>
         </div>
       </div>
 
-      {/* Bộ lọc & Tìm kiếm */}
       <div className="flex gap-4 items-center bg-white/[0.02] p-2 rounded-2xl border border-white/5 backdrop-blur-md">
         <div className="relative flex-1">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
@@ -312,7 +398,7 @@ export default function RentalsPage() {
         </div>
         <div className="h-8 w-px bg-white/10 mx-2"></div>
         <div className="flex gap-2 pr-2">
-          {["Tất cả", "Đang thuê", "Cảnh báo"].map((tab) => (
+          {["Tất cả", "Đang thuê", "Cảnh báo", "Hoàn tất"].map((tab) => (
             <button
               key={tab}
               onClick={() => setFilterStatus(tab)}
@@ -320,6 +406,7 @@ export default function RentalsPage() {
                 filterStatus === tab 
                   ? tab === "Cảnh báo" ? "bg-rose-500/20 text-rose-400 border border-rose-500/30" 
                     : tab === "Đang thuê" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : tab === "Hoàn tất" ? "bg-white/20 text-white border border-white/20"
                     : "bg-white/10 text-white border border-white/10"
                   : "text-zinc-500 hover:text-zinc-300 border border-transparent hover:bg-white/5"
               }`}
@@ -330,7 +417,6 @@ export default function RentalsPage() {
         </div>
       </div>
 
-      {/* Danh sách Lệnh */}
       <div className="bg-white/[0.02] rounded-2xl border border-white/5 backdrop-blur-md overflow-hidden min-h-[400px] shadow-xl">
         {loading ? (
           <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
@@ -349,49 +435,102 @@ export default function RentalsPage() {
                 <th className="px-6 py-4">Mã định danh</th>
                 <th className="px-6 py-4">Khách hàng</th>
                 <th className="px-6 py-4">Hệ thống thiết bị</th>
-                <th className="px-6 py-4">Thời gian</th>
+                <th className="px-6 py-4">Thời gian trả</th>
                 <th className="px-6 py-4">Tổng giá trị</th>
                 <th className="px-6 py-4">Tình trạng</th>
                 <th className="px-6 py-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filteredRentals.map((item) => (
-                <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
-                  <td className="px-6 py-4 font-mono text-xs text-indigo-400 font-medium">{item.orderCode}</td>
-                  <td className="px-6 py-4">
-                    <p className="font-medium text-white">{item.customerName}</p>
-                    <p className="text-xs text-zinc-500 mt-1">{item.customerPhone}</p>
-                  </td>
-                  <td className="px-6 py-4 text-zinc-300 max-w-[200px] truncate">{item.equipmentSummary}</td>
-                  <td className="px-6 py-4 text-xs">
-                    <p>{item.startDate}</p>
-                    <p className="text-zinc-500">Đến: {item.endDate}</p>
-                  </td>
-                  <td className="px-6 py-4 font-medium text-white">
-                    {item.totalAmount ? item.totalAmount.toLocaleString('vi-VN') : 0} đ
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
-                      {item.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa lệnh">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleDelete(item.id)} className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Xóa lệnh">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {filteredRentals.map((item) => {
+                const dynamicStatus = getDynamicStatus(item);
+                const isLocked = item.status === "Hoàn tất";
+
+                return (
+                  <tr key={item.id} className={`hover:bg-white/[0.02] transition-colors group ${isLocked ? 'opacity-60 hover:opacity-100' : ''}`}>
+                    <td className="px-6 py-4 font-mono text-xs text-indigo-400 font-medium">{item.orderCode}</td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-white">{item.customerName}</p>
+                      <p className="text-xs text-zinc-500 mt-1">{item.customerPhone}</p>
+                    </td>
+                    <td className="px-6 py-4 text-zinc-300 max-w-[200px] truncate">{item.equipmentSummary}</td>
+                    <td className="px-6 py-4 text-xs font-medium text-white">
+                      {item.endDate}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-emerald-400">
+                      {item.totalAmount ? item.totalAmount.toLocaleString('vi-VN') : 0} đ
+                    </td>
+                    <td className="px-6 py-4">
+                      {getStatusBadge(dynamicStatus)}
+                    </td>
+                    <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      
+                      {!isLocked && (
+                        <>
+                          <button onClick={() => handleConfirmReturn(item)} className="text-emerald-500 hover:text-emerald-400 transition-colors p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20" title="Khách trả máy & Chốt đơn">
+                            <ShieldCheck className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa lệnh">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      
+                      <button onClick={() => handleDelete(item.id, item.status)} className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Xóa lệnh">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
 
-      {/* Modal Thêm/Sửa Lệnh */}
+      {/* MODAL XÁC NHẬN TÙY CHỈNH (THAY THẾ WINDOW.CONFIRM) */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                {confirmDialog.type === "danger" ? (
+                  <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-rose-500" />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
+                    <ShieldCheck className="w-5 h-5 text-emerald-500" />
+                  </div>
+                )}
+                <h3 className="text-lg font-medium text-white">{confirmDialog.title}</h3>
+              </div>
+              <p className="text-sm text-zinc-400 whitespace-pre-wrap leading-relaxed pl-13">
+                {confirmDialog.message}
+              </p>
+            </div>
+            <div className="p-4 bg-white/[0.02] border-t border-white/5 flex gap-3 justify-end">
+              <button 
+                onClick={() => setConfirmDialog(prev => ({...prev, isOpen: false}))}
+                className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-white transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                onClick={confirmDialog.onConfirm}
+                className={`px-4 py-2 text-sm font-medium text-white rounded-xl transition-all shadow-lg ${
+                  confirmDialog.type === "danger" 
+                    ? "bg-rose-600 hover:bg-rose-500 shadow-rose-500/20" 
+                    : "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/20"
+                }`}
+              >
+                Xác nhận
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
@@ -405,8 +544,6 @@ export default function RentalsPage() {
             </div>
             
             <form onSubmit={handleSaveRental} className="p-6 space-y-6">
-              
-              {/* KHU VỰC 1: CHỌN KHÁCH HÀNG */}
               <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 space-y-4">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs text-indigo-400 uppercase tracking-widest font-medium">1. Khách hàng thuê</label>
@@ -433,11 +570,9 @@ export default function RentalsPage() {
                 </div>
               </div>
 
-              {/* KHU VỰC 2: CHỌN THIẾT BỊ */}
               <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 space-y-4">
                 <div className="flex items-center justify-between">
                   <label className="block text-xs text-indigo-400 uppercase tracking-widest font-medium">2. Hệ thống thiết bị</label>
-                  
                   {!editingId && (
                     <div className="relative w-48">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
@@ -455,7 +590,7 @@ export default function RentalsPage() {
                 {!editingId && (
                   <div className="max-h-48 overflow-y-auto pr-2 custom-scrollbar space-y-4">
                     {Object.keys(groupedEquipments).length === 0 ? (
-                      <p className="text-zinc-500 text-sm text-center py-4 border border-dashed border-white/10 rounded-xl">Không tìm thấy thiết bị nào phù hợp.</p>
+                      <p className="text-zinc-500 text-sm text-center py-4 border border-dashed border-white/10 rounded-xl">Không tìm thấy thiết bị nào đang "Rảnh".</p>
                     ) : (
                       Object.entries(groupedEquipments).map(([category, items]: [string, any]) => (
                         <div key={category} className="space-y-2">
@@ -495,21 +630,20 @@ export default function RentalsPage() {
                   value={formData.equipmentSummary} 
                   onChange={e => setFormData({...formData, equipmentSummary: e.target.value})} 
                   className="w-full px-4 py-3 bg-black/20 border border-white/5 rounded-xl text-white focus:outline-none resize-none h-16 text-sm" 
-                  placeholder={editingId ? "Sửa danh sách thiết bị..." : "Các thiết bị đã chọn sẽ hiện ở đây..."} 
+                  placeholder={editingId ? "Danh sách thiết bị (Chế độ sửa không cho phép đổi thiết bị)..." : "Các thiết bị đã chọn sẽ hiện ở đây..."} 
                 />
               </div>
 
-              {/* KHU VỰC 3: THỜI GIAN VÀ THANH TOÁN */}
               <div className="grid grid-cols-2 gap-5">
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Ngày nhận</label>
-                      <input type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none text-sm" />
+                      <input required type="date" value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none text-sm" />
                     </div>
                     <div>
                       <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Trả dự kiến</label>
-                      <input type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none text-sm" />
+                      <input required type="date" value={formData.endDate} onChange={e => setFormData({...formData, endDate: e.target.value})} className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none text-sm" />
                     </div>
                   </div>
                 </div>
@@ -532,14 +666,11 @@ export default function RentalsPage() {
                     </div>
                     <div>
                       <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Tình trạng</label>
-                      <div className="relative">
-                        <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none appearance-none text-sm">
-                          <option>Đang hoạt động</option>
-                          <option>Cảnh báo trễ</option>
-                          <option>Hoàn tất</option>
-                        </select>
-                        <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-[10px]">▼</div>
+                      <div className="w-full px-3 py-2 bg-black/20 border border-white/5 rounded-xl text-zinc-400 text-sm flex items-center gap-2 cursor-not-allowed">
+                        <Lock className="w-3.5 h-3.5"/> 
+                        {formData.status}
                       </div>
+                      <p className="text-[9px] text-zinc-600 mt-1">Được bảo vệ bằng Hệ thống.</p>
                     </div>
                   </div>
                 </div>
