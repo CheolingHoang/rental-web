@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs, writeBatch } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, ShieldCheck, Lock, AlertCircle, AlertTriangle, Check } from "lucide-react";
+import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, ShieldCheck, Lock, AlertCircle, AlertTriangle, Check, Calendar, User, Phone } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
 export interface Rental {
@@ -56,12 +56,11 @@ export default function RentalsPage() {
   const [displayPrice, setDisplayPrice] = useState("");
   const [equipmentSearchTerm, setEquipmentSearchTerm] = useState("");
 
-  // NÂNG CẤP: State cho Hộp thoại Xác nhận Custom (Thay thế window.confirm)
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
     title: "",
     message: "",
-    type: "danger", // 'danger' | 'success'
+    type: "danger", 
     onConfirm: () => {}
   });
 
@@ -203,7 +202,6 @@ export default function RentalsPage() {
     }
   };
 
-  // NÂNG CẤP: Dùng Hộp thoại Custom thay cho window.confirm
   const handleConfirmReturn = (rental: Rental) => {
     setConfirmDialog({
       isOpen: true,
@@ -260,7 +258,6 @@ export default function RentalsPage() {
     setIsModalOpen(true);
   };
 
-  // NÂNG CẤP: Dùng Hộp thoại Custom thay cho window.confirm
   const handleDelete = (id: string, status: string) => {
     const isLocked = status === "Hoàn tất";
     
@@ -361,23 +358,23 @@ export default function RentalsPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 relative animate-in fade-in duration-500">
+    <div className="max-w-7xl mx-auto space-y-6 md:space-y-8 relative animate-in fade-in duration-500">
       <Toaster position="top-right" toastOptions={{
         style: { background: '#18181b', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
       }} />
 
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-4 h-4 text-indigo-400" />
             <span className="text-xs font-medium tracking-widest text-indigo-400 uppercase">Trung tâm điều phối</span>
           </div>
-          <h2 className="text-3xl font-normal text-white tracking-tight">Lệnh cho thuê</h2>
+          <h2 className="text-2xl md:text-3xl font-normal text-white tracking-tight">Lệnh cho thuê</h2>
         </div>
-        <div className="flex gap-3">
+        <div className="w-full md:w-auto">
           <button 
             onClick={() => { resetForm(); setIsModalOpen(true); }}
-            className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+            className="w-full md:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm text-white rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
           >
             <Plus className="w-4 h-4" />
             Tạo lệnh mới
@@ -385,30 +382,30 @@ export default function RentalsPage() {
         </div>
       </div>
 
-      <div className="flex gap-4 items-center bg-white/[0.02] p-2 rounded-2xl border border-white/5 backdrop-blur-md">
-        <div className="relative flex-1">
+      <div className="flex flex-col md:flex-row gap-4 items-center bg-white/[0.02] p-2 rounded-2xl border border-white/5 backdrop-blur-md">
+        <div className="relative w-full md:flex-1">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
           <input 
             type="text" 
-            placeholder="Tìm theo mã lệnh, khách hàng, số điện thoại..." 
+            placeholder="Tìm theo mã, khách hàng, SĐT..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-11 pr-4 py-2.5 bg-transparent text-sm text-white placeholder-zinc-600 focus:outline-none"
           />
         </div>
-        <div className="h-8 w-px bg-white/10 mx-2"></div>
-        <div className="flex gap-2 pr-2">
+        <div className="hidden md:block h-8 w-px bg-white/10 mx-2"></div>
+        <div className="flex flex-wrap gap-2 pr-0 md:pr-2 w-full md:w-auto">
           {["Tất cả", "Đang thuê", "Cảnh báo", "Hoàn tất"].map((tab) => (
             <button
               key={tab}
               onClick={() => setFilterStatus(tab)}
-              className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
+              className={`flex-1 md:flex-none px-3 md:px-4 py-2 rounded-xl text-xs font-medium transition-all ${
                 filterStatus === tab 
                   ? tab === "Cảnh báo" ? "bg-rose-500/20 text-rose-400 border border-rose-500/30" 
                     : tab === "Đang thuê" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                     : tab === "Hoàn tất" ? "bg-white/20 text-white border border-white/20"
                     : "bg-white/10 text-white border border-white/10"
-                  : "text-zinc-500 hover:text-zinc-300 border border-transparent hover:bg-white/5"
+                  : "text-zinc-500 hover:text-zinc-300 border border-transparent hover:bg-white/5 bg-black/20 md:bg-transparent"
               }`}
             >
               {tab}
@@ -417,78 +414,136 @@ export default function RentalsPage() {
         </div>
       </div>
 
-      <div className="bg-white/[0.02] rounded-2xl border border-white/5 backdrop-blur-md overflow-hidden min-h-[400px] shadow-xl">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
-            <p className="text-sm uppercase tracking-widest animate-pulse">Đang tải dữ liệu từ máy chủ...</p>
-          </div>
-        ) : filteredRentals.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
-            <FileText className="w-12 h-12 mb-4 opacity-20" />
-            <p>Không có lệnh cho thuê nào phù hợp với bộ lọc.</p>
-          </div>
-        ) : (
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className="bg-black/40 text-zinc-500 border-b border-white/5 uppercase tracking-wider text-[11px] font-semibold">
-              <tr>
-                <th className="px-6 py-4">Mã định danh</th>
-                <th className="px-6 py-4">Khách hàng</th>
-                <th className="px-6 py-4">Hệ thống thiết bị</th>
-                <th className="px-6 py-4">Thời gian trả</th>
-                <th className="px-6 py-4">Tổng giá trị</th>
-                <th className="px-6 py-4">Tình trạng</th>
-                <th className="px-6 py-4 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredRentals.map((item) => {
-                const dynamicStatus = getDynamicStatus(item);
-                const isLocked = item.status === "Hoàn tất";
+      {loading ? (
+        <div className="flex flex-col items-center justify-center h-[400px] text-zinc-500 bg-white/[0.02] rounded-2xl border border-white/5">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+          <p className="text-sm uppercase tracking-widest animate-pulse">Đang tải dữ liệu từ máy chủ...</p>
+        </div>
+      ) : filteredRentals.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-[400px] text-zinc-500 bg-white/[0.02] rounded-2xl border border-white/5">
+          <FileText className="w-12 h-12 mb-4 opacity-20" />
+          <p>Không có lệnh cho thuê nào phù hợp với bộ lọc.</p>
+        </div>
+      ) : (
+        <>
+          {/* ========================================================== */}
+          {/* GIAO DIỆN MOBILE: LIST CARD (Ẩn trên md) */}
+          {/* ========================================================== */}
+          <div className="md:hidden grid grid-cols-1 gap-4">
+            {filteredRentals.map((item) => {
+              const dynamicStatus = getDynamicStatus(item);
+              const isLocked = item.status === "Hoàn tất";
 
-                return (
-                  <tr key={item.id} className={`hover:bg-white/[0.02] transition-colors group ${isLocked ? 'opacity-60 hover:opacity-100' : ''}`}>
-                    <td className="px-6 py-4 font-mono text-xs text-indigo-400 font-medium">{item.orderCode}</td>
-                    <td className="px-6 py-4">
-                      <p className="font-medium text-white">{item.customerName}</p>
-                      <p className="text-xs text-zinc-500 mt-1">{item.customerPhone}</p>
-                    </td>
-                    <td className="px-6 py-4 text-zinc-300 max-w-[200px] truncate">{item.equipmentSummary}</td>
-                    <td className="px-6 py-4 text-xs font-medium text-white">
-                      {item.endDate}
-                    </td>
-                    <td className="px-6 py-4 font-medium text-emerald-400">
-                      {item.totalAmount ? item.totalAmount.toLocaleString('vi-VN') : 0} đ
-                    </td>
-                    <td className="px-6 py-4">
+              return (
+                <div key={item.id} className={`bg-white/[0.03] border border-white/5 rounded-2xl p-4 flex flex-col gap-4 ${isLocked ? 'opacity-60' : ''}`}>
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-mono text-xs text-indigo-400 font-medium mb-1">{item.orderCode}</p>
+                      <h3 className="text-base font-bold text-white flex items-center gap-1.5"><User className="w-4 h-4 text-zinc-500" /> {item.customerName}</h3>
+                      <p className="text-xs text-zinc-500 mt-0.5 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-zinc-600" /> {item.customerPhone}</p>
+                    </div>
+                    <div>
                       {getStatusBadge(dynamicStatus)}
-                    </td>
-                    <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      
-                      {!isLocked && (
-                        <>
-                          <button onClick={() => handleConfirmReturn(item)} className="text-emerald-500 hover:text-emerald-400 transition-colors p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20" title="Khách trả máy & Chốt đơn">
-                            <ShieldCheck className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa lệnh">
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                      
-                      <button onClick={() => handleDelete(item.id, item.status)} className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Xóa lệnh">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                    </div>
+                  </div>
 
-      {/* MODAL XÁC NHẬN TÙY CHỈNH (THAY THẾ WINDOW.CONFIRM) */}
+                  <div className="bg-black/30 rounded-xl p-3 border border-white/5">
+                    <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed">{item.equipmentSummary}</p>
+                  </div>
+
+                  <div className="flex justify-between items-end border-b border-white/5 pb-4">
+                    <div>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 flex items-center gap-1"><Calendar className="w-3 h-3" /> Trả máy</p>
+                      <p className="text-sm font-medium text-white">{item.endDate}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Tổng tiền</p>
+                      <p className="text-lg font-bold text-emerald-400">{item.totalAmount ? item.totalAmount.toLocaleString('vi-VN') : 0} <span className="text-xs">đ</span></p>
+                    </div>
+                  </div>
+
+                  {/* THAO TÁC CỦA MOBILE (Vuốt ngang hoặc hiện full) */}
+                  <div className="flex items-center gap-2">
+                    {!isLocked && (
+                      <>
+                        <button onClick={() => handleConfirmReturn(item)} className="flex-1 flex items-center justify-center gap-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 py-2.5 rounded-xl text-xs font-bold transition-active active:scale-95">
+                          <ShieldCheck className="w-4 h-4" /> Thu hồi
+                        </button>
+                        <button onClick={() => handleEditClick(item)} className="px-4 py-2.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl text-xs font-bold transition-active active:scale-95">
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => handleDelete(item.id, item.status)} className={`px-4 py-2.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-active active:scale-95 ${isLocked ? "flex-1" : ""}`}>
+                      <Trash2 className="w-4 h-4" /> {isLocked ? "Xóa lệnh" : ""}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ========================================================== */}
+          {/* GIAO DIỆN DESKTOP: BẢNG TABLE TRUYỀN THỐNG (Ẩn trên đt) */}
+          {/* ========================================================== */}
+          <div className="hidden md:block bg-white/[0.02] rounded-2xl border border-white/5 backdrop-blur-md overflow-hidden shadow-xl">
+            <table className="w-full text-left text-sm text-zinc-400">
+              <thead className="bg-black/40 text-zinc-500 border-b border-white/5 uppercase tracking-wider text-[11px] font-semibold">
+                <tr>
+                  <th className="px-6 py-4">Mã định danh</th>
+                  <th className="px-6 py-4">Khách hàng</th>
+                  <th className="px-6 py-4">Hệ thống thiết bị</th>
+                  <th className="px-6 py-4">Thời gian trả</th>
+                  <th className="px-6 py-4">Tổng giá trị</th>
+                  <th className="px-6 py-4">Tình trạng</th>
+                  <th className="px-6 py-4 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredRentals.map((item) => {
+                  const dynamicStatus = getDynamicStatus(item);
+                  const isLocked = item.status === "Hoàn tất";
+
+                  return (
+                    <tr key={item.id} className={`hover:bg-white/[0.02] transition-colors group ${isLocked ? 'opacity-60 hover:opacity-100' : ''}`}>
+                      <td className="px-6 py-4 font-mono text-xs text-indigo-400 font-medium">{item.orderCode}</td>
+                      <td className="px-6 py-4">
+                        <p className="font-medium text-white">{item.customerName}</p>
+                        <p className="text-xs text-zinc-500 mt-1">{item.customerPhone}</p>
+                      </td>
+                      <td className="px-6 py-4 text-zinc-300 max-w-[200px] truncate">{item.equipmentSummary}</td>
+                      <td className="px-6 py-4 text-xs font-medium text-white">{item.endDate}</td>
+                      <td className="px-6 py-4 font-medium text-emerald-400">
+                        {item.totalAmount ? item.totalAmount.toLocaleString('vi-VN') : 0} đ
+                      </td>
+                      <td className="px-6 py-4">
+                        {getStatusBadge(dynamicStatus)}
+                      </td>
+                      <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {!isLocked && (
+                          <>
+                            <button onClick={() => handleConfirmReturn(item)} className="text-emerald-500 hover:text-emerald-400 transition-colors p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20" title="Khách trả máy & Chốt đơn">
+                              <ShieldCheck className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa lệnh">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => handleDelete(item.id, item.status)} className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Xóa lệnh">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* MODAL XÁC NHẬN TÙY CHỈNH (Giữ nguyên) */}
       {confirmDialog.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-[#0a0a0a] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
@@ -531,20 +586,21 @@ export default function RentalsPage() {
         </div>
       )}
 
+      {/* MODAL TẠO / SỬA (Giữ nguyên) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02] shrink-0">
               <h3 className="text-xl font-medium text-white">
                 {editingId ? "Cập nhật lệnh thuê" : "Tạo lệnh mới"}
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
+              <button onClick={() => setIsModalOpen(false)} className="text-zinc-500 hover:text-white transition-colors bg-white/5 p-2 rounded-full hover:bg-white/10">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleSaveRental} className="p-6 space-y-6">
-              <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 space-y-4">
+            <form onSubmit={handleSaveRental} className="p-4 md:p-6 space-y-4 md:space-y-6 overflow-y-auto custom-scrollbar flex-1">
+              <div className="bg-white/[0.02] p-4 md:p-5 rounded-2xl border border-white/5 space-y-4">
                 <div className="flex justify-between items-center">
                   <label className="block text-xs text-indigo-400 uppercase tracking-widest font-medium">1. Khách hàng thuê</label>
                 </div>
@@ -553,7 +609,7 @@ export default function RentalsPage() {
                     <select 
                       value={selectedCustomerId} 
                       onChange={handleCustomerSelect} 
-                      className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer"
+                      className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer text-sm"
                     >
                       <option value="">-- Click để chọn khách hàng từ hồ sơ --</option>
                       {customers.map(c => (
@@ -564,17 +620,17 @@ export default function RentalsPage() {
                   </div>
                 )}
                 
-                <div className="grid grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
                   <input readOnly={!editingId} type="text" value={formData.customerName} onChange={e => setFormData({...formData, customerName: e.target.value})} className="w-full px-4 py-2.5 bg-black/20 border border-white/5 rounded-xl text-zinc-300 focus:outline-none text-sm" placeholder="Tên khách hàng" />
                   <input readOnly={!editingId} type="text" value={formData.customerPhone} onChange={e => setFormData({...formData, customerPhone: e.target.value})} className="w-full px-4 py-2.5 bg-black/20 border border-white/5 rounded-xl text-zinc-300 focus:outline-none text-sm" placeholder="Số điện thoại" />
                 </div>
               </div>
 
-              <div className="bg-white/[0.02] p-5 rounded-2xl border border-white/5 space-y-4">
-                <div className="flex items-center justify-between">
+              <div className="bg-white/[0.02] p-4 md:p-5 rounded-2xl border border-white/5 space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <label className="block text-xs text-indigo-400 uppercase tracking-widest font-medium">2. Hệ thống thiết bị</label>
                   {!editingId && (
-                    <div className="relative w-48">
+                    <div className="relative w-full md:w-48">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
                       <input 
                         type="text" 
@@ -599,7 +655,7 @@ export default function RentalsPage() {
                             <div className="h-px flex-1 bg-white/5"></div>
                           </div>
                           
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                             {(items as any[]).map((eq: any) => {
                               const isSelected = selectedEquipments.some((item: any) => item.id === eq.id);
                               return (
@@ -629,13 +685,13 @@ export default function RentalsPage() {
                   readOnly={!editingId}
                   value={formData.equipmentSummary} 
                   onChange={e => setFormData({...formData, equipmentSummary: e.target.value})} 
-                  className="w-full px-4 py-3 bg-black/20 border border-white/5 rounded-xl text-white focus:outline-none resize-none h-16 text-sm" 
-                  placeholder={editingId ? "Danh sách thiết bị (Chế độ sửa không cho phép đổi thiết bị)..." : "Các thiết bị đã chọn sẽ hiện ở đây..."} 
+                  className="w-full px-4 py-3 bg-black/20 border border-white/5 rounded-xl text-white focus:outline-none resize-none h-20 text-sm" 
+                  placeholder={editingId ? "Danh sách thiết bị..." : "Các thiết bị đã chọn sẽ hiện ở đây..."} 
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
-                <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                <div className="space-y-4 bg-white/[0.02] p-4 md:p-5 rounded-2xl border border-white/5">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Ngày nhận</label>
@@ -648,7 +704,7 @@ export default function RentalsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 bg-white/[0.02] p-4 md:p-5 rounded-2xl border border-white/5">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] text-emerald-500 uppercase tracking-widest mb-1.5 font-medium">Tổng giá trị (VNĐ)</label>
@@ -670,20 +726,20 @@ export default function RentalsPage() {
                         <Lock className="w-3.5 h-3.5"/> 
                         {formData.status}
                       </div>
-                      <p className="text-[9px] text-zinc-600 mt-1">Được bảo vệ bằng Hệ thống.</p>
                     </div>
                   </div>
                 </div>
               </div>
-
-              <div className="pt-6 mt-2 border-t border-white/5 flex gap-3 justify-end">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">Hủy bỏ</button>
-                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)] disabled:opacity-50">
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />)}
-                  {editingId ? "Cập nhật lệnh" : "Tạo lệnh thuê"}
-                </button>
-              </div>
             </form>
+            
+            {/* Vùng nút bấm chốt đơn được đẩy xuống cố định ở dưới */}
+            <div className="p-4 md:p-6 border-t border-white/5 flex gap-3 justify-end shrink-0 bg-[#0a0a0a]">
+              <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-sm font-medium text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors">Hủy bỏ</button>
+              <button form="rentalForm" onClick={handleSaveRental} disabled={isSubmitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)] disabled:opacity-50">
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />)}
+                {editingId ? "Cập nhật lệnh" : "Tạo lệnh thuê"}
+              </button>
+            </div>
           </div>
         </div>
       )}

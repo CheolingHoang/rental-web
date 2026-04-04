@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth"; 
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { Plus, Search, Wrench, Loader2, X, Trash2, Camera, Check, Edit2, Lock, PackageCheck } from "lucide-react";
+import { Plus, Search, Wrench, Loader2, X, Trash2, Camera, Check, Edit2, Lock, PackageCheck, Hash, Tag } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
 export interface Equipment {
@@ -236,31 +236,33 @@ export default function EquipmentPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8 relative animate-in fade-in duration-500">
+    <div className="max-w-7xl mx-auto space-y-6 md:space-y-8 relative animate-in fade-in duration-500">
       
       <Toaster position="top-right" toastOptions={{
         style: { background: '#18181b', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }
       }} />
 
-      <div className="flex justify-between items-end">
+      {/* HEADER NÂNG CẤP RESPONSIVE */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <Wrench className="w-4 h-4 text-indigo-400" />
             <span className="text-xs font-medium tracking-widest text-indigo-400 uppercase">Quản lý kho</span>
           </div>
-          <h2 className="text-3xl font-normal text-white tracking-tight">Thiết bị & Tài sản</h2>
+          <h2 className="text-2xl md:text-3xl font-normal text-white tracking-tight">Thiết bị & Tài sản</h2>
         </div>
         <button 
           onClick={() => { resetForm(); setIsModalOpen(true); }}
-          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
+          className="w-full md:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm text-white rounded-xl transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)]"
         >
           <Plus className="w-4 h-4" />
           Thêm thiết bị mới
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-center">
-        <div className="relative w-full max-w-md">
+      {/* THANH TÌM KIẾM & LỌC NÂNG CẤP RESPONSIVE */}
+      <div className="flex flex-col md:flex-row gap-4 items-center">
+        <div className="relative w-full md:max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
           <input 
             type="text" 
@@ -271,110 +273,164 @@ export default function EquipmentPage() {
           />
         </div>
         
-        <div className="relative min-w-[200px]">
-          <select 
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/5 rounded-xl text-sm text-zinc-300 focus:outline-none focus:border-indigo-500/30 cursor-pointer appearance-none"
-          >
-            <option value="all">Tất cả danh mục</option>
-            {allCategories.map((cat, idx) => (
-              <option key={idx} value={cat}>{cat}</option>
-            ))}
-          </select>
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>
-        </div>
-
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl whitespace-nowrap">
-          <PackageCheck className="w-4 h-4 text-emerald-400" />
-          <span className="text-sm font-medium text-emerald-400">
-            Sẵn sàng: <span className="font-bold">{availableCount}</span> máy
-          </span>
-        </div>
-      </div>
-
-      <div className="bg-white/[0.02] rounded-2xl border border-white/5 backdrop-blur-md overflow-hidden min-h-[400px] shadow-xl">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
-            <p className="text-sm uppercase tracking-widest animate-pulse">Đang tải dữ liệu từ máy chủ...</p>
-          </div>
-        ) : filteredEquipments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full py-32 text-zinc-500">
-            <Camera className="w-12 h-12 mb-4 opacity-20" />
-            <p>Kho thiết bị hiện đang trống hoặc không tìm thấy kết quả.</p>
-          </div>
-        ) : (
-          <table className="w-full text-left text-sm text-zinc-400">
-            <thead className="bg-black/40 text-zinc-500 border-b border-white/5 uppercase tracking-wider text-[11px] font-semibold">
-              <tr>
-                <th className="px-6 py-4">Thiết bị</th>
-                <th className="px-6 py-4">Serial / Mã vạch</th>
-                <th className="px-6 py-4">Danh mục</th>
-                <th className="px-6 py-4">Đơn giá (Ngày)</th>
-                <th className="px-6 py-4">Trạng thái</th>
-                <th className="px-6 py-4 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredEquipments.map((item) => (
-                <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
-                  <td className="px-6 py-4 font-medium text-white">{item.name}</td>
-                  <td className="px-6 py-4 font-mono text-xs text-zinc-300">{item.serialNumber}</td>
-                  <td className="px-6 py-4">{item.category}</td>
-                  <td className="px-6 py-4 font-medium text-indigo-300">
-                    {item.pricePerDay ? item.pricePerDay.toLocaleString('vi-VN') : 0} đ
-                  </td>
-                  <td className="px-6 py-4">
-                    {/* Đã gỡ bỏ tính năng select, chỉ còn label hiển thị và nút bảo trì */}
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
-                        {item.status}
-                      </span>
-
-                      <button 
-                        onClick={() => handleToggleMaintenance(item)} 
-                        className={`p-1.5 rounded-md transition-colors ${item.status === 'Bảo trì' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-white/5 text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10'}`}
-                        title={item.status === 'Bảo trì' ? "Đã sửa xong, trả về kho" : "Chuyển máy đi bảo trì"}
-                      >
-                        {item.status === 'Bảo trì' ? <Check className="w-3.5 h-3.5" /> : <Wrench className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa thiết bị">
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => handleDelete(item.id)} className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Xóa thiết bị">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
+        <div className="flex w-full md:w-auto gap-4">
+          <div className="relative flex-1 md:min-w-[200px]">
+            <select 
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="w-full px-4 py-2.5 bg-[#0a0a0a] border border-white/5 rounded-xl text-sm text-zinc-300 focus:outline-none focus:border-indigo-500/30 cursor-pointer appearance-none"
+            >
+              <option value="all">Tất cả danh mục</option>
+              {allCategories.map((cat, idx) => (
+                <option key={idx} value={cat}>{cat}</option>
               ))}
-            </tbody>
-          </table>
-        )}
+            </select>
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-500 text-xs">▼</div>
+          </div>
+
+          <div className="flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl whitespace-nowrap">
+            <PackageCheck className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-medium text-emerald-400">
+              Sẵn sàng: <span className="font-bold">{availableCount}</span>
+            </span>
+          </div>
+        </div>
       </div>
 
+      {loading ? (
+        <div className="flex flex-col items-center justify-center h-[400px] text-zinc-500 bg-white/[0.02] rounded-2xl border border-white/5">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-4" />
+          <p className="text-sm uppercase tracking-widest animate-pulse">Đang tải dữ liệu từ máy chủ...</p>
+        </div>
+      ) : filteredEquipments.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-[400px] text-zinc-500 bg-white/[0.02] rounded-2xl border border-white/5">
+          <Camera className="w-12 h-12 mb-4 opacity-20" />
+          <p>Kho thiết bị hiện đang trống hoặc không tìm thấy kết quả.</p>
+        </div>
+      ) : (
+        <>
+          {/* ========================================================== */}
+          {/* GIAO DIỆN MOBILE: LIST CARD (Ẩn trên máy tính) */}
+          {/* ========================================================== */}
+          <div className="md:hidden grid grid-cols-1 gap-4">
+            {filteredEquipments.map((item) => (
+              <div key={item.id} className="bg-white/[0.03] border border-white/5 rounded-2xl p-4 flex flex-col gap-4">
+                <div className="flex justify-between items-start gap-2">
+                  <div>
+                    <h3 className="text-base font-bold text-white leading-tight mb-1">{item.name}</h3>
+                    <p className="font-mono text-xs text-zinc-500 flex items-center gap-1.5 mt-2"><Hash className="w-3 h-3"/> SN: {item.serialNumber}</p>
+                  </div>
+                  <div className="shrink-0">
+                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
+                      {item.status}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-end border-b border-white/5 pb-4">
+                  <div>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1 flex items-center gap-1"><Tag className="w-3 h-3"/> Danh mục</p>
+                    <p className="text-sm font-medium text-zinc-300">{item.category}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Đơn giá / Ngày</p>
+                    <p className="text-lg font-bold text-indigo-400">{item.pricePerDay ? item.pricePerDay.toLocaleString('vi-VN') : 0} <span className="text-xs">đ</span></p>
+                  </div>
+                </div>
+
+                {/* THAO TÁC CỦA MOBILE (Dàn đều) */}
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => handleToggleMaintenance(item)} 
+                    className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-active active:scale-95 ${item.status === 'Bảo trì' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-white/5 text-zinc-400 border border-white/10'}`}
+                  >
+                    {item.status === 'Bảo trì' ? <><Check className="w-4 h-4"/> Đã xong</> : <><Wrench className="w-4 h-4" /> Bảo trì</>}
+                  </button>
+                  <button onClick={() => handleEditClick(item)} className="px-5 py-2.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-xl text-xs font-bold transition-active active:scale-95">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => handleDelete(item.id)} className="px-5 py-2.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-active active:scale-95">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ========================================================== */}
+          {/* GIAO DIỆN DESKTOP: BẢNG TABLE TRUYỀN THỐNG (Ẩn trên điện thoại) */}
+          {/* ========================================================== */}
+          <div className="hidden md:block bg-white/[0.02] rounded-2xl border border-white/5 backdrop-blur-md overflow-hidden shadow-xl">
+            <table className="w-full text-left text-sm text-zinc-400">
+              <thead className="bg-black/40 text-zinc-500 border-b border-white/5 uppercase tracking-wider text-[11px] font-semibold">
+                <tr>
+                  <th className="px-6 py-4">Thiết bị</th>
+                  <th className="px-6 py-4">Serial / Mã vạch</th>
+                  <th className="px-6 py-4">Danh mục</th>
+                  <th className="px-6 py-4">Đơn giá (Ngày)</th>
+                  <th className="px-6 py-4">Trạng thái</th>
+                  <th className="px-6 py-4 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredEquipments.map((item) => (
+                  <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
+                    <td className="px-6 py-4 font-medium text-white">{item.name}</td>
+                    <td className="px-6 py-4 font-mono text-xs text-zinc-300">{item.serialNumber}</td>
+                    <td className="px-6 py-4">{item.category}</td>
+                    <td className="px-6 py-4 font-medium text-indigo-300">
+                      {item.pricePerDay ? item.pricePerDay.toLocaleString('vi-VN') : 0} đ
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium border ${getStatusColor(item.status)}`}>
+                          {item.status}
+                        </span>
+                        <button 
+                          onClick={() => handleToggleMaintenance(item)} 
+                          className={`p-1.5 rounded-md transition-colors ${item.status === 'Bảo trì' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-white/5 text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10'}`}
+                          title={item.status === 'Bảo trì' ? "Đã sửa xong, trả về kho" : "Chuyển máy đi bảo trì"}
+                        >
+                          {item.status === 'Bảo trì' ? <Check className="w-3.5 h-3.5" /> : <Wrench className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleEditClick(item)} className="text-zinc-500 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-indigo-500/10" title="Sửa thiết bị">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDelete(item.id)} className="text-zinc-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-500/10" title="Xóa thiết bị">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* MODAL THÊM / SỬA THIẾT BỊ NÂNG CẤP RESPONSIVE */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+            <div className="p-4 md:p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02] shrink-0">
               <h3 className="text-xl font-medium text-white">
                 {editingId ? "Cập nhật tài sản" : "Thêm tài sản mới"}
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-zinc-500 hover:text-white transition-colors">
+              <button onClick={() => setIsModalOpen(false)} className="text-zinc-500 hover:text-white transition-colors bg-white/5 p-2 rounded-full hover:bg-white/10">
                 <X className="w-5 h-5" />
               </button>
             </div>
             
-            <form onSubmit={handleSaveEquipment} className="p-6 space-y-5">
+            <form onSubmit={handleSaveEquipment} className="p-4 md:p-6 space-y-4 md:space-y-5 overflow-y-auto custom-scrollbar flex-1">
               <div>
                 <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Tên thiết bị</label>
                 <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-white focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 focus:outline-none transition-all" placeholder="VD: Bàn trộn hình ATEM Mini Pro" />
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
                 <div>
                   <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Danh mục</label>
                   {isAddingCategory ? (
@@ -435,7 +491,7 @@ export default function EquipmentPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
                 <div>
                   <label className="block text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Giá thuê / Ngày (VNĐ)</label>
                   <div className="relative">
@@ -469,15 +525,16 @@ export default function EquipmentPage() {
                   {editingId && <p className="text-[10px] text-zinc-500 mt-1">Trạng thái được tự động hóa. Không thể sửa tay.</p>}
                 </div>
               </div>
-
-              <div className="pt-6 mt-2 border-t border-white/5 flex gap-3 justify-end">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-sm font-medium text-zinc-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">Hủy bỏ</button>
-                <button type="submit" disabled={isSubmitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)] disabled:opacity-50">
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />)}
-                  {editingId ? "Cập nhật thay đổi" : "Lưu thiết bị"}
-                </button>
-              </div>
             </form>
+            
+            {/* Thanh Footer Modal bám đáy siêu tiện */}
+            <div className="p-4 md:p-6 border-t border-white/5 flex gap-3 justify-end shrink-0 bg-[#0a0a0a]">
+              <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-sm font-medium text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-xl transition-colors">Hủy bỏ</button>
+              <button onClick={handleSaveEquipment} disabled={isSubmitting} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white rounded-xl transition-all flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.3)] disabled:opacity-50">
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (editingId ? <Edit2 className="w-4 h-4" /> : <Plus className="w-4 h-4" />)}
+                {editingId ? "Cập nhật thay đổi" : "Lưu thiết bị"}
+              </button>
+            </div>
           </div>
         </div>
       )}
