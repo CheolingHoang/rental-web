@@ -3,23 +3,19 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { 
-  Camera, 
-  Box, 
-  Settings, 
-  ChevronRight, 
-  Activity,
-  ShieldCheck,
-  Zap
+  Camera, Box, Settings, ChevronRight, Activity, ShieldCheck, Zap, Bot 
 } from "lucide-react";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db } from "../../lib/firebase"; 
 
-// ĐÃ CẬP NHẬT LẠI CHỈ CÒN 3 MODULE CHÍNH
 const SYSTEM_MODULES = [
   {
     id: "rental-workspace",
     title: "Rental Workspace",
     description: "Quản lý kho thiết bị, điều phối lệnh thuê, khách hàng và hệ thống AI.",
     icon: Box,
-    href: "/dashboard/overview", // Trỏ thẳng vào trang Tổng quan của mảng Rental
+    href: "/dashboard/overview", 
     color: "text-blue-400",
     bgColor: "bg-blue-500/10",
     borderColor: "group-hover:border-blue-500/50",
@@ -31,12 +27,24 @@ const SYSTEM_MODULES = [
     title: "Client Proofing",
     description: "Nền tảng duyệt ảnh mẫu, chia sẻ file và nhận phản hồi trực tiếp từ khách hàng.",
     icon: Camera,
-    href: "/dashboard/project", // Trỏ thẳng vào trang Dự án duyệt ảnh
+    href: "/dashboard/project", 
     color: "text-amber-400",
     bgColor: "bg-amber-500/10",
     borderColor: "group-hover:border-amber-500/50",
     glowColor: "group-hover:bg-amber-500/20",
     stats: "Tích hợp G-Drive"
+  },
+  {
+    id: "automation-bot",
+    title: "Automation Core",
+    description: "Hệ thống Bot tự động hóa lấy dữ liệu và lên lịch đăng bài Facebook.",
+    icon: Bot,
+    href: "/dashboard/cfs-bot", 
+    color: "text-rose-400",
+    bgColor: "bg-rose-500/10",
+    borderColor: "group-hover:border-rose-500/50",
+    glowColor: "group-hover:bg-rose-500/20",
+    stats: "Tự động hóa"
   },
   {
     id: "system-settings",
@@ -54,6 +62,7 @@ const SYSTEM_MODULES = [
 
 export default function DashboardHubPage() {
   const [greeting, setGreeting] = useState("");
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -62,9 +71,33 @@ export default function DashboardHubPage() {
     else setGreeting("Chào buổi tối");
   }, []);
 
+  useEffect(() => {
+    const auth = getAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user && user.email) {
+        try {
+          const q = query(collection(db, "app_users"), where("email", "==", user.email));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            setCurrentUser(snap.docs[0].data());
+          } else {
+            setCurrentUser({ email: user.email, role: "Guest", allowedPages: [] });
+          }
+        } catch (error) {
+          console.error("Lỗi tải thông tin user:", error);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const displayName = currentUser?.fullName || currentUser?.displayUsername || currentUser?.email?.split('@')[0] || "Đang tải...";
+  const displayRole = currentUser?.role === "Admin" ? "Quản trị viên" : "Thành viên";
+
   return (
     <div className="max-w-[1600px] mx-auto min-h-[80vh] flex flex-col relative animate-in fade-in duration-700">
-      
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none -z-10" />
       <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-blue-600/5 rounded-full blur-[150px] pointer-events-none -z-10" />
 
@@ -74,9 +107,9 @@ export default function DashboardHubPage() {
             <Zap className="w-3.5 h-3.5 text-amber-400" /> Hệ sinh thái phân mảnh
           </div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-white mb-2">
-            {greeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">Quản trị viên</span>
+            {greeting}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">{displayName}</span>
           </h1>
-          <p className="text-zinc-400 text-lg">Chào mừng trở lại trung tâm điều khiển CHEOLING SYSTEM.</p>
+          <p className="text-zinc-400 text-lg">Chào mừng {displayRole.toLowerCase()} trở lại trung tâm điều khiển.</p>
         </div>
 
         <div className="flex gap-4">
@@ -94,8 +127,8 @@ export default function DashboardHubPage() {
         </div>
       </div>
 
-      {/* CHỈNH LẠI GRID CHO 3 MODULE NHÌN CÂN ĐỐI HƠN */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 relative z-10">
+        {/* KHÔNG FILTER NỮA, SHOW HẾT TOÀN BỘ CARD */}
         {SYSTEM_MODULES.map((module) => {
           const Icon = module.icon;
           return (
@@ -105,7 +138,6 @@ export default function DashboardHubPage() {
               className={`group relative overflow-hidden bg-white/[0.02] border border-white/5 rounded-[32px] p-8 transition-all duration-500 hover:-translate-y-2 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.5)] ${module.borderColor}`}
             >
               <div className={`absolute -top-24 -right-24 w-48 h-48 rounded-full blur-[50px] transition-colors duration-500 opacity-0 group-hover:opacity-100 ${module.glowColor}`} />
-              
               <div className="relative z-10 flex flex-col h-full">
                 <div className="flex justify-between items-start mb-12">
                   <div className={`p-4 rounded-2xl border border-white/5 backdrop-blur-md ${module.bgColor}`}>
@@ -115,7 +147,6 @@ export default function DashboardHubPage() {
                     <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
                   </div>
                 </div>
-
                 <div className="mt-auto">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/5 text-[10px] uppercase tracking-widest font-bold text-zinc-400 mb-4">
                     {module.stats}
@@ -139,7 +170,6 @@ export default function DashboardHubPage() {
             <Activity className="w-5 h-5 text-indigo-400" /> Luồng hoạt động gần đây
           </h3>
         </div>
-        
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[1, 2, 3].map((i) => (
             <div key={i} className="flex gap-4 p-4 rounded-2xl hover:bg-white/[0.02] transition-colors cursor-default">
@@ -152,7 +182,6 @@ export default function DashboardHubPage() {
           ))}
         </div>
       </div>
-
     </div>
   );
 }
