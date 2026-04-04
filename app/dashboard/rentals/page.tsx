@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, where, getDocs, writeBatch } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
-import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, ShieldCheck, Lock, AlertCircle, AlertTriangle } from "lucide-react";
+import { Plus, Search, Loader2, X, Trash2, Edit2, Sparkles, FileText, ShieldCheck, Lock, AlertCircle, AlertTriangle, Check } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 
 export interface Rental {
