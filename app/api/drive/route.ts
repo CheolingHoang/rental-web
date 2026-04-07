@@ -14,7 +14,6 @@ export async function POST(request: Request) {
     }
 
     // 2. Đánh thức con Bot bằng Key bí mật
-    // Lưu ý: Replace('\\n') cực kỳ quan trọng vì khi lưu vào .env nó hay bị lỗi định dạng xuống dòng
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -25,22 +24,36 @@ export async function POST(request: Request) {
 
     const drive = google.drive({ version: 'v3', auth });
 
-    // 3. Xin Google danh sách ảnh trong Folder đó
-    const response = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
-      fields: 'files(id, name, thumbnailLink, webContentLink)', // Xin Google trả về link ảnh
-      pageSize: 100, // Lấy tối đa 100 ảnh mỗi lần
-    });
+    // 3. VÒNG LẶP VÉT SẠCH ẢNH (FIX LỖI THIẾU ẢNH)
+    let allFiles: any[] = [];
+    let pageToken: string | undefined = undefined;
 
-    // 4. Biến đổi dữ liệu cho hợp với Giao diện web của Tín
-    const photos = response.data.files?.map((file) => ({
+    do {
+      const response: any = await drive.files.list({
+        q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
+        // Phải xin thêm nextPageToken để biết đường lật sang trang sau
+        fields: 'nextPageToken, files(id, name, thumbnailLink, webContentLink)', 
+        pageSize: 1000, // Kéo max ga 1000 ảnh mỗi lần gọi (Giới hạn cao nhất của Google)
+        pageToken: pageToken,
+      });
+
+      if (response.data.files && response.data.files.length > 0) {
+        allFiles = allFiles.concat(response.data.files);
+      }
+      
+      // Lấy chìa khoá trang tiếp theo (Nếu hết ảnh, cái này sẽ là undefined -> vòng lặp dừng)
+      pageToken = response.data.nextPageToken; 
+    } while (pageToken);
+
+    // 4. Biến đổi toàn bộ dữ liệu vừa gom được cho hợp với Giao diện web
+    const photos = allFiles.map((file) => ({
       id: file.id,
       name: file.name,
       // Dùng thumbnailLink chỉnh kích thước s=800 (800px) cho ảnh nét căng mà load nhẹ
       url: file.thumbnailLink?.replace('=s220', '=s800') || file.webContentLink, 
       note: "",
       selected: false
-    })) || [];
+    }));
 
     return NextResponse.json({ photos });
 
