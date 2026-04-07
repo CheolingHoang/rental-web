@@ -28,6 +28,18 @@ export default function ClientProofingPage() {
 
   const [toast, setToast] = useState<{show: boolean, message: string}>({show: false, message: ""});
 
+  // 🚀 BÙA CHÚ KHÓA NỀN: Ngăn không cho trang web cuộn khi đang mở Popup Ảnh
+  useEffect(() => {
+    if (viewPhotoId) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "auto";
+    }
+    return () => {
+      document.body.style.overflow = "auto";
+    };
+  }, [viewPhotoId]);
+
   useEffect(() => {
     const fetchProjectAndImages = async () => {
       if (!id) return;
@@ -156,14 +168,13 @@ export default function ClientProofingPage() {
   return (
     <div className="min-h-screen bg-[#050505] text-zinc-300 pb-24 sm:pb-32 selection:bg-indigo-500/30 font-sans relative">
       
-      {/* TOAST NOTIFICATION - Chuyển xuống góc trên, bo viên siêu gọn */}
-      <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] transition-all duration-300 ${toast.show ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-8 pointer-events-none'}`}>
+      {/* TOAST NOTIFICATION */}
+      <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-[200] transition-all duration-300 ${toast.show ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-8 pointer-events-none'}`}>
         <div className={`backdrop-blur-xl text-white px-5 py-3 rounded-full shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center gap-2 text-sm font-bold whitespace-nowrap ${isDownloadMode ? 'bg-emerald-600/95 border border-emerald-500/50' : 'bg-indigo-600/95 border border-indigo-500/50'}`}>
           <Sparkles className="w-4 h-4" /> {toast.message}
         </div>
       </div>
 
-      {/* HEADER TỐI ƯU MOBILE */}
       <header className="sticky top-0 z-40 bg-black/90 backdrop-blur-2xl border-b border-white/10 px-4 py-3 sm:px-8 sm:py-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4 shadow-lg">
         <div className="flex justify-between items-start sm:items-center w-full sm:w-auto">
           <div>
@@ -197,14 +208,14 @@ export default function ClientProofingPage() {
         </div>
       </header>
 
-      {/* GRID ẢNH TỐI ƯU MOBILE (Khoảng cách hẹp hơn, nút to hơn) */}
       <main className="max-w-[1600px] mx-auto p-2 sm:p-4 md:p-8">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4 md:gap-6">
           {photos.map((photo) => (
             <div 
               key={photo.id} 
               onClick={() => { setViewPhotoId(photo.id); setTempNote(photo.note || ""); }}
-              className={`relative group cursor-pointer rounded-xl sm:rounded-2xl overflow-hidden border-2 transition-all duration-300 ${
+              // Fix lỗi viền iOS: Thêm transform-gpu và overflow-hidden để ảnh không bị tràn góc bo tròn
+              className={`relative group cursor-pointer rounded-xl sm:rounded-2xl overflow-hidden transform-gpu border-2 transition-all duration-300 ${
                 !isDownloadMode && photo.selected ? "border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.3)]" : "border-white/5 hover:border-white/20"
               }`}
             >
@@ -219,30 +230,27 @@ export default function ClientProofingPage() {
                   loading="lazy"
                   className={`w-full h-full object-cover transition-transform duration-700 ${!isDownloadMode && photo.selected ? "scale-105" : "group-hover:scale-105"}`} 
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/0 to-black/40 opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/0 to-black/40 opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
               </div>
 
               {isDownloadMode ? (
-                // NÚT TẢI XUỐNG DÀNH CHO TOUCH ĐIỆN THOẠI (To hơn, nằm ở góc phải dưới)
                 <button 
                   onClick={(e) => handleSingleDownload(photo, e)} 
-                  className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 bg-emerald-500 hover:bg-emerald-400 text-white w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-[0_4px_15px_rgba(16,185,129,0.5)] transition-all transform active:scale-90"
+                  className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 bg-emerald-500 hover:bg-emerald-400 text-white w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shadow-[0_4px_15px_rgba(16,185,129,0.5)] transition-all transform active:scale-90 z-20"
                 >
                   <Download className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
               ) : (
-                // NÚT CHỌN (Góc trái trên)
                 <button 
                   onClick={(e) => toggleSelect(photo.id, e)} 
-                  className={`absolute top-2 left-2 sm:top-3 sm:left-3 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center z-10 transition-all ${photo.selected ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/50" : "bg-black/50 text-white/50 border border-white/20 backdrop-blur-md"}`}
+                  className={`absolute top-2 left-2 sm:top-3 sm:left-3 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center z-20 transition-all ${photo.selected ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/50" : "bg-black/50 text-white/50 border border-white/20 backdrop-blur-md"}`}
                 >
                   <Check className="w-4 h-4 sm:w-5 sm:h-5" />
                 </button>
               )}
 
-              {/* HIỂN THỊ GHI CHÚ */}
               {!isDownloadMode && photo.note && (
-                <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 bg-amber-500/95 backdrop-blur-md rounded-lg p-2 flex items-start gap-1.5 text-white shadow-lg">
+                <div className="absolute bottom-2 left-2 right-2 sm:bottom-3 sm:left-3 sm:right-3 bg-amber-500/95 backdrop-blur-md rounded-lg p-2 flex items-start gap-1.5 text-white shadow-lg pointer-events-none">
                   <MessageSquare className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0 mt-0.5" />
                   <p className="text-[10px] sm:text-[11px] font-medium truncate">{photo.note}</p>
                 </div>
@@ -252,30 +260,30 @@ export default function ClientProofingPage() {
         </div>
       </main>
 
-      {/* POPUP CHI TIẾT UX MOBILE (BOTTOM SHEET LÀM CHUẨN) */}
+      {/* POPUP CHI TIẾT UX MOBILE (FIX LỖI TRÀN VÀ TRÔI NỀN) */}
       {viewPhotoId && activePhoto && (
-        <div className="fixed inset-0 z-[100] flex flex-col sm:flex-row bg-black/95 backdrop-blur-xl animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[150] flex flex-col sm:flex-row bg-black/95 backdrop-blur-3xl animate-in fade-in duration-200 overflow-hidden">
           
-          {/* NÚT ĐÓNG CỰC KỲ NỔI BẬT (Góc trên phải, Fixed để lúc nào cũng thấy) */}
+          {/* NÚT ĐÓNG FIXED TẠI CHỖ */}
           <button 
             onClick={() => setViewPhotoId(null)} 
-            className="fixed top-4 right-4 z-[120] bg-rose-600 hover:bg-rose-500 text-white w-11 h-11 sm:w-auto sm:px-4 sm:py-3 rounded-full shadow-[0_4px_20px_rgba(225,29,72,0.6)] transition-all flex items-center justify-center gap-2 border border-rose-400/30 active:scale-90"
+            className="absolute top-4 right-4 z-[200] bg-rose-600 hover:bg-rose-500 text-white w-10 h-10 sm:w-auto sm:px-4 sm:py-3 rounded-full shadow-[0_4px_20px_rgba(225,29,72,0.6)] transition-all flex items-center justify-center gap-2 border border-rose-400/30 active:scale-90"
           >
-            <X className="w-6 h-6"/> 
+            <X className="w-5 h-5 sm:w-6 sm:h-6"/> 
             <span className="font-bold tracking-widest text-sm hidden sm:block uppercase">Đóng</span>
           </button>
           
-          {/* VÙNG XEM ẢNH TRÊN ĐIỆN THOẠI (Chiếm 60% màn hình trên) */}
-          <div className="flex-1 w-full h-[55vh] sm:h-screen flex items-center justify-center p-2 pt-16 sm:p-8 relative">
+          {/* VÙNG XEM ẢNH: Tự động co giãn (flex-1 min-h-0) nhường chỗ cho bảng bên dưới */}
+          <div className="flex-1 min-h-0 w-full flex items-center justify-center p-4 pt-16 sm:p-8 relative z-10">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={activePhoto.url} alt="view" className="max-w-full max-h-full object-contain rounded-xl drop-shadow-[0_0_20px_rgba(255,255,255,0.05)]" />
+            <img src={activePhoto.url} alt="view" className="max-w-full max-h-full object-contain rounded-xl drop-shadow-[0_0_20px_rgba(255,255,255,0.05)] pointer-events-auto" />
           </div>
 
-          {/* VÙNG THAO TÁC - THIẾT KẾ DẠNG BOTTOM SHEET CHO MOBILE */}
-          <div className="w-full sm:w-[420px] h-[45vh] sm:h-screen bg-[#0f0f0f] rounded-t-[32px] sm:rounded-none border-t sm:border-t-0 sm:border-l border-white/10 p-5 sm:p-8 flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.5)] overflow-y-auto relative z-[110]">
+          {/* BOTTOM SHEET: Không bị giãn ra (shrink-0), cuộn bên trong (overflow-y-auto) */}
+          <div className="shrink-0 w-full sm:w-[420px] max-h-[60vh] sm:max-h-none sm:h-screen bg-[#0f0f0f] rounded-t-[32px] sm:rounded-none border-t sm:border-t-0 sm:border-l border-white/10 p-6 sm:p-8 flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.8)] overflow-y-auto overscroll-contain relative z-[120]">
             
-            {/* Vạch ngang vuốt kiểu iOS (Chỉ hiện trên mobile) */}
-            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-6 sm:hidden"></div>
+            {/* Vạch vuốt iOS */}
+            <div className="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-6 sm:hidden shrink-0"></div>
             
             {isDownloadMode ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center space-y-5">
@@ -299,11 +307,10 @@ export default function ClientProofingPage() {
                   <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-400"/> Ghi chú Yêu cầu
                 </h3>
                 
-                {/* Textarea text-base để iPhone không bị zoom tự động */}
                 <textarea 
                   value={tempNote} onChange={(e) => setTempNote(e.target.value)}
                   placeholder="Nhập yêu cầu chỉnh sửa (Nếu có)..."
-                  className="flex-1 w-full bg-white/[0.03] border border-white/10 rounded-2xl p-4 text-white resize-none outline-none focus:border-indigo-500/50 focus:bg-white/[0.05] transition-all text-base sm:text-sm leading-relaxed"
+                  className="flex-1 min-h-[120px] w-full bg-white/[0.03] border border-white/10 rounded-2xl p-4 text-white resize-none outline-none focus:border-indigo-500/50 focus:bg-white/[0.05] transition-all text-base sm:text-sm leading-relaxed"
                 ></textarea>
                 
                 <div className="mt-4 sm:mt-6 space-y-3 pb-4">
