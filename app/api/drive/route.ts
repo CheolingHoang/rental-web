@@ -3,17 +3,14 @@ import { google } from 'googleapis';
 
 export async function POST(request: Request) {
   try {
-    const { folderLink } = await request.json();
+    // Nhận thêm biến 'type' từ Frontend gửi lên
+    const { folderLink, type } = await request.json();
 
-    // 1. Tự động bóc tách Folder ID từ cái Link Drive dài loằng ngoằng
     const match = folderLink.match(/[-\w]{25,}/);
     const folderId = match ? match[0] : null;
 
-    if (!folderId) {
-      return NextResponse.json({ error: "Link Drive không hợp lệ" }, { status: 400 });
-    }
+    if (!folderId) return NextResponse.json({ error: "Link Drive không hợp lệ" }, { status: 400 });
 
-    // 2. Đánh thức con Bot bằng Key bí mật
     const auth = new google.auth.GoogleAuth({
       credentials: {
         client_email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -24,33 +21,34 @@ export async function POST(request: Request) {
 
     const drive = google.drive({ version: 'v3', auth });
 
-    // 3. VÒNG LẶP VÉT SẠCH ẢNH (FIX LỖI THIẾU ẢNH)
+    // LỌC THEO LOẠI FOLDER (ẢNH HOẶC VIDEO)
+    let mimeFilter = "mimeType contains 'image/'";
+    if (type === 'video') {
+      mimeFilter = "mimeType contains 'video/'";
+    }
+
     let allFiles: any[] = [];
     let pageToken: string | undefined = undefined;
 
     do {
       const response: any = await drive.files.list({
-        q: `'${folderId}' in parents and mimeType contains 'image/' and trashed = false`,
-        // Phải xin thêm nextPageToken để biết đường lật sang trang sau
+        q: `'${folderId}' in parents and ${mimeFilter} and trashed = false`,
         fields: 'nextPageToken, files(id, name, thumbnailLink, webContentLink)', 
-        pageSize: 1000, // Kéo max ga 1000 ảnh mỗi lần gọi (Giới hạn cao nhất của Google)
+        pageSize: 1000, 
         pageToken: pageToken,
       });
 
       if (response.data.files && response.data.files.length > 0) {
         allFiles = allFiles.concat(response.data.files);
       }
-      
-      // Lấy chìa khoá trang tiếp theo (Nếu hết ảnh, cái này sẽ là undefined -> vòng lặp dừng)
       pageToken = response.data.nextPageToken; 
     } while (pageToken);
 
-    // 4. Biến đổi toàn bộ dữ liệu vừa gom được cho hợp với Giao diện web
     const photos = allFiles.map((file) => ({
       id: file.id,
       name: file.name,
-      // Dùng thumbnailLink chỉnh kích thước s=800 (800px) cho ảnh nét căng mà load nhẹ
-      url: file.thumbnailLink?.replace('=s220', '=s800') || file.webContentLink, 
+      // Video thường không có thumbnailLink nét, nên dùng luôn webContentLink
+      url: type === 'video' ? file.webContentLink : (file.thumbnailLink?.replace('=s220', '=s800') || file.webContentLink), 
       note: "",
       selected: false
     }));
